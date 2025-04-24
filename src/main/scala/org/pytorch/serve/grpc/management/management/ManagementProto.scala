@@ -5,8 +5,8 @@ package org.pytorch.serve.grpc.management.management
 
 object ManagementProto extends _root_.scalapb.GeneratedFileObject {
   lazy val dependencies: Seq[_root_.scalapb.GeneratedFileObject] = Seq.empty
-  lazy val messagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] =
-    Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]](
+  lazy val messagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] =
+    Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]](
       org.pytorch.serve.grpc.management.management.ManagementResponse,
       org.pytorch.serve.grpc.management.management.DescribeModelRequest,
       org.pytorch.serve.grpc.management.management.ListModelsRequest,

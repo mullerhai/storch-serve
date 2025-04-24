@@ -8,8 +8,8 @@ object InferenceProto extends _root_.scalapb.GeneratedFileObject {
     com.google.protobuf.empty.EmptyProto,
     com.google.rpc.status.StatusProto
   )
-  lazy val messagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] =
-    Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]](
+  lazy val messagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] =
+    Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]](
       org.pytorch.serve.grpc.inference.inference.PredictionsRequest,
       org.pytorch.serve.grpc.inference.inference.PredictionResponse,
       org.pytorch.serve.grpc.inference.inference.TorchServeHealthResponse

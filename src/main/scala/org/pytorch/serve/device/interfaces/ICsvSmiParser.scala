@@ -33,10 +33,10 @@ trait ICsvSmiParser {
    *                               Accelerator object from a line of CSV data.
    */
   def csvSmiOutputToAccelerators(csvOutput: String, parsedGpuIds: mutable.LinkedHashSet[Integer], parseFunction: Function[Array[String], Accelerator]): List[Accelerator] = {
-    val accelerators = new ListBuffer[Accelerator]
-//      val lines: Array[String] =util.Arrays.asList(csvOutput.split("\n")).asScala
+      val accelerators = new ListBuffer[Accelerator]
+      val lines: Array[String] = csvOutput.split("\n") //util.Arrays.asList(csvOutput.split("\n")).asScala.toArray
       val addAll = parsedGpuIds.isEmpty
-      csvOutput.lines().skip(1).forEach((line:String)=>{
+      lines.toSeq.drop(1).foreach(line => {
         val parts = line.split(",")
         try {
           val accelerator = parseFunction.apply(parts)
@@ -45,7 +45,19 @@ trait ICsvSmiParser {
           case e: NumberFormatException =>
             ICsvSmiParser.csvSmiParserLogger.warn("Failed to parse GPU ID: " + parts(1).trim, e)
         }
+        
       })
+      accelerators.toList
+//      csvOutput.lines.skip(1).forEach((line: String) => {
+//        val parts = line.split(",")
+//        try {
+//          val accelerator = parseFunction.apply(parts)
+//          if (accelerator != null && (addAll || parsedGpuIds.contains(accelerator.getAcceleratorId))) then accelerators.append(accelerator)
+//        } catch {
+//          case e: NumberFormatException =>
+//            ICsvSmiParser.csvSmiParserLogger.warn("Failed to parse GPU ID: " + parts(1).trim, e)
+//        }
+//      })
 //      lines.stream.skip(1) // Skip the header line.forEach((line: String) => {
 //      val parts = line.split(",")
 //      try {
@@ -55,7 +67,7 @@ trait ICsvSmiParser {
 //        case e: NumberFormatException =>
 //          ICsvSmiParser.csvSmiParserLogger.warn("Failed to parse GPU ID: " + parts(1).trim, e)
 //      }
-    accelerators.toList
+    
     }
 
   //)

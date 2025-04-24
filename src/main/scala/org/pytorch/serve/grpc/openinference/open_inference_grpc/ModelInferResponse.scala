@@ -235,20 +235,20 @@ object ModelInferResponse extends scalapb.GeneratedMessageCompanion[org.pytorch.
   }
   def javaDescriptor: _root_.com.google.protobuf.Descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpcProto.javaDescriptor.getMessageTypes().get(11)
   def scalaDescriptor: _root_.scalapb.descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpcProto.scalaDescriptor.messages(11)
-  def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[_] = {
-    var __out: _root_.scalapb.GeneratedMessageCompanion[_] = null
+  def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[?] = {
+    var __out: _root_.scalapb.GeneratedMessageCompanion[?] = null
     (__number: @_root_.scala.unchecked) match {
       case 4 => __out = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.ParametersEntry
       case 5 => __out = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor
     }
     __out
   }
-  lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] =
-    Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]](
+  lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] =
+    Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]](
       _root_.org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor,
       _root_.org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.ParametersEntry
     )
-  def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[_] = throw new MatchError(__fieldNumber)
+  def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[?] = throw new MatchError(__fieldNumber)
   lazy val defaultInstance = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse(
     modelName = "",
     modelVersion = "",
@@ -471,19 +471,19 @@ object ModelInferResponse extends scalapb.GeneratedMessageCompanion[org.pytorch.
     }
     def javaDescriptor: _root_.com.google.protobuf.Descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.javaDescriptor.getNestedTypes().get(0)
     def scalaDescriptor: _root_.scalapb.descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.scalaDescriptor.nestedMessages(0)
-    def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[_] = {
-      var __out: _root_.scalapb.GeneratedMessageCompanion[_] = null
+    def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[?] = {
+      var __out: _root_.scalapb.GeneratedMessageCompanion[?] = null
       (__number: @_root_.scala.unchecked) match {
         case 4 => __out = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor.ParametersEntry
         case 5 => __out = org.pytorch.serve.grpc.openinference.open_inference_grpc.InferTensorContents
       }
       __out
     }
-    lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] =
-      Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]](
+    lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] =
+      Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]](
         _root_.org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor.ParametersEntry
       )
-    def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[_] = throw new MatchError(__fieldNumber)
+    def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[?] = throw new MatchError(__fieldNumber)
     lazy val defaultInstance = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor(
       name = "",
       datatype = "",
@@ -605,15 +605,15 @@ object ModelInferResponse extends scalapb.GeneratedMessageCompanion[org.pytorch.
       }
       def javaDescriptor: _root_.com.google.protobuf.Descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor.javaDescriptor.getNestedTypes().get(0)
       def scalaDescriptor: _root_.scalapb.descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor.scalaDescriptor.nestedMessages(0)
-      def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[_] = {
-        var __out: _root_.scalapb.GeneratedMessageCompanion[_] = null
+      def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[?] = {
+        var __out: _root_.scalapb.GeneratedMessageCompanion[?] = null
         (__number: @_root_.scala.unchecked) match {
           case 2 => __out = org.pytorch.serve.grpc.openinference.open_inference_grpc.InferParameter
         }
         __out
       }
-      lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] = Seq.empty
-      def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[_] = throw new MatchError(__fieldNumber)
+      lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] = Seq.empty
+      def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[?] = throw new MatchError(__fieldNumber)
       lazy val defaultInstance = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor.ParametersEntry(
         key = "",
         value = _root_.scala.None
@@ -783,15 +783,15 @@ object ModelInferResponse extends scalapb.GeneratedMessageCompanion[org.pytorch.
     }
     def javaDescriptor: _root_.com.google.protobuf.Descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.javaDescriptor.getNestedTypes().get(1)
     def scalaDescriptor: _root_.scalapb.descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.scalaDescriptor.nestedMessages(1)
-    def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[_] = {
-      var __out: _root_.scalapb.GeneratedMessageCompanion[_] = null
+    def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[?] = {
+      var __out: _root_.scalapb.GeneratedMessageCompanion[?] = null
       (__number: @_root_.scala.unchecked) match {
         case 2 => __out = org.pytorch.serve.grpc.openinference.open_inference_grpc.InferParameter
       }
       __out
     }
-    lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] = Seq.empty
-    def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[_] = throw new MatchError(__fieldNumber)
+    lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] = Seq.empty
+    def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[?] = throw new MatchError(__fieldNumber)
     lazy val defaultInstance = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.ParametersEntry(
       key = "",
       value = _root_.scala.None

@@ -35,7 +35,7 @@ final class PluginsManager private {
   def getSnapShotSerializer: SnapshotSerializer = {
     logger.info(" Loading snapshot serializer plugin...")
     val loader = ServiceLoader.load(classOf[SnapshotSerializer])
-    if (loader.findFirst.isPresent) {
+    if (loader.findFirst().isPresent) {
       val snapShotSerializer = loader.findFirst.get
       logger.info("Snapshot serializer plugin has been loaded successfully")
       return snapShotSerializer

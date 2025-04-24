@@ -196,19 +196,19 @@ object ModelMetadataResponse extends scalapb.GeneratedMessageCompanion[org.pytor
   }
   def javaDescriptor: _root_.com.google.protobuf.Descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpcProto.javaDescriptor.getMessageTypes().get(9)
   def scalaDescriptor: _root_.scalapb.descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpcProto.scalaDescriptor.messages(9)
-  def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[_] = {
-    var __out: _root_.scalapb.GeneratedMessageCompanion[_] = null
+  def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[?] = {
+    var __out: _root_.scalapb.GeneratedMessageCompanion[?] = null
     (__number: @_root_.scala.unchecked) match {
       case 4 => __out = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelMetadataResponse.TensorMetadata
       case 5 => __out = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelMetadataResponse.TensorMetadata
     }
     __out
   }
-  lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] =
-    Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]](
+  lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] =
+    Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]](
       _root_.org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelMetadataResponse.TensorMetadata
     )
-  def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[_] = throw new MatchError(__fieldNumber)
+  def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[?] = throw new MatchError(__fieldNumber)
   lazy val defaultInstance = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelMetadataResponse(
     name = "",
     versions = _root_.scala.Seq.empty,
@@ -382,9 +382,9 @@ object ModelMetadataResponse extends scalapb.GeneratedMessageCompanion[org.pytor
     }
     def javaDescriptor: _root_.com.google.protobuf.Descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelMetadataResponse.javaDescriptor.getNestedTypes().get(0)
     def scalaDescriptor: _root_.scalapb.descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelMetadataResponse.scalaDescriptor.nestedMessages(0)
-    def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[_] = throw new MatchError(__number)
-    lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] = Seq.empty
-    def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[_] = throw new MatchError(__fieldNumber)
+    def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[?] = throw new MatchError(__number)
+    lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] = Seq.empty
+    def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[?] = throw new MatchError(__fieldNumber)
     lazy val defaultInstance = org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelMetadataResponse.TensorMetadata(
       name = "",
       datatype = "",

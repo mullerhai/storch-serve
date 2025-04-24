@@ -131,7 +131,7 @@ class Connector {
       "Inference"
   }
 
-  def getServerChannel: Class[_ <: ServerChannel] = {
+  def getServerChannel: Class[? <: ServerChannel] = {
     if (Connector.useNativeIo && Epoll.isAvailable) return if (uds) classOf[EpollServerDomainSocketChannel]
     else classOf[EpollServerSocketChannel]
     else if (Connector.useNativeIo && KQueue.isAvailable) return if (uds) classOf[KQueueServerDomainSocketChannel]
@@ -139,7 +139,7 @@ class Connector {
     classOf[NioServerSocketChannel]
   }
 
-  def getClientChannel: Class[_ <: Channel] = {
+  def getClientChannel: Class[? <: Channel] = {
     if (Connector.useNativeIo && Epoll.isAvailable) return if (uds) classOf[EpollDomainSocketChannel]
     else classOf[EpollSocketChannel]
     else if (Connector.useNativeIo && KQueue.isAvailable) return if (uds) classOf[KQueueDomainSocketChannel]

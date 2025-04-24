@@ -128,7 +128,7 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
         if (workerProcess != null && workerProcess.isAlive) {
           var workerDestroyed = false
           try {
-            val cmd = String.format(OSUtils.getKillCmd, workerProcess.pid())
+            val cmd = String.format(OSUtils.getKillCmd, workerProcess.pid)
             val workerKillProcess = Runtime.getRuntime.exec(cmd, null, null)
             workerDestroyed = workerKillProcess.waitFor(configManager.getUnregisterModelTimeout, TimeUnit.SECONDS)
           } catch {

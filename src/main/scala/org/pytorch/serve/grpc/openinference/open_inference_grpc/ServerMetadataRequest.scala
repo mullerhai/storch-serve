@@ -64,9 +64,9 @@ object ServerMetadataRequest extends scalapb.GeneratedMessageCompanion[org.pytor
   }
   def javaDescriptor: _root_.com.google.protobuf.Descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpcProto.javaDescriptor.getMessageTypes().get(6)
   def scalaDescriptor: _root_.scalapb.descriptors.Descriptor = org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpcProto.scalaDescriptor.messages(6)
-  def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[_] = throw new MatchError(__number)
-  lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[_ <: _root_.scalapb.GeneratedMessage]] = Seq.empty
-  def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[_] = throw new MatchError(__fieldNumber)
+  def messageCompanionForFieldNumber(__number: _root_.scala.Int): _root_.scalapb.GeneratedMessageCompanion[?] = throw new MatchError(__number)
+  lazy val nestedMessagesCompanions: Seq[_root_.scalapb.GeneratedMessageCompanion[? <: _root_.scalapb.GeneratedMessage]] = Seq.empty
+  def enumCompanionForFieldNumber(__fieldNumber: _root_.scala.Int): _root_.scalapb.GeneratedEnumCompanion[?] = throw new MatchError(__fieldNumber)
   lazy val defaultInstance = org.pytorch.serve.grpc.openinference.open_inference_grpc.ServerMetadataRequest(
   )
   implicit class ServerMetadataRequestLens[UpperPB](_l: _root_.scalapb.lenses.Lens[UpperPB, org.pytorch.serve.grpc.openinference.open_inference_grpc.ServerMetadataRequest]) extends _root_.scalapb.lenses.ObjectLens[UpperPB, org.pytorch.serve.grpc.openinference.open_inference_grpc.ServerMetadataRequest](_l) {
