@@ -1,13 +1,12 @@
 package org.pytorch.serve.servingsdk.impl
 
+import org.pytorch.serve.servingsdk.{Worker, Model as Mo}
 import org.pytorch.serve.wlm.{Model, WorkerThread}
+import org.pytorch.serve.wlm.{ModelManager, Model as Mod}
 
 import java.util
-import org.pytorch.serve.servingsdk.Worker
-import org.pytorch.serve.wlm.ModelManager
-import org.pytorch.serve.servingsdk.Model as Mo
-
-import org.pytorch.serve.wlm.Model as Mod
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 class ModelServerModel(val model: Mod) extends Mo {
   override def getModelName: String = model.getModelName
 
@@ -16,9 +15,9 @@ class ModelServerModel(val model: Mod) extends Mo {
   override def getModelHandler: String = model.getModelArchive.getHandler
 
   override def getModelWorkers: util.List[Worker] = {
-    val list = new util.ArrayList[Worker]
+    val list = new ListBuffer[Worker]
     ModelManager.getInstance.getWorkers(model.getModelVersionName).
-      forEach((r: WorkerThread) => list.add(new ModelWorker(r)))
-    list
+      foreach((r: WorkerThread) => list.append(new ModelWorker(r)))
+    list.toList.asJava
   }
 }

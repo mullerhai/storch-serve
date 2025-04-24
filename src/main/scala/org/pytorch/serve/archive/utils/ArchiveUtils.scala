@@ -1,29 +1,21 @@
 package org.pytorch.serve.archive.utils
 
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
-import com.google.gson.JsonParseException
-import java.io.File
-import java.io.FileNotFoundException
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.Reader
-import java.net.MalformedURLException
-import java.net.URL
-import java.nio.charset.StandardCharsets
-import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
-import java.util
-import java.util.regex.Pattern
-import org.apache.commons.io.FileUtils
-import org.apache.commons.io.FilenameUtils
+import com.google.gson.{Gson, GsonBuilder, JsonParseException}
+import org.apache.commons.io.{FileUtils, FilenameUtils}
 import org.pytorch.serve.archive.DownloadArchiveException
 import org.pytorch.serve.archive.model.InvalidModelException
 import org.pytorch.serve.archive.model.s3.HttpUtils
-import org.yaml.snakeyaml.LoaderOptions
-import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.Constructor
 import org.yaml.snakeyaml.error.YAMLException
+import org.yaml.snakeyaml.{LoaderOptions, Yaml}
+
+import java.io.*
+import java.net.{MalformedURLException, URL}
+import java.nio.charset.StandardCharsets
+import java.nio.file.{FileAlreadyExistsException, Files}
+import java.util
+import java.util.regex.Pattern
+import scala.collection.mutable.ListBuffer
 
 object ArchiveUtils {
   val GSON: Gson = new GsonBuilder().setPrettyPrinting.create
@@ -56,7 +48,7 @@ object ArchiveUtils {
 
   @throws[InvalidModelException]
   @throws[IOException]
-  def readYamlFile(file: File): util.Map[String, AnyRef] = {
+  def readYamlFile(file: File): Map[String, AnyRef] = {
     val yaml = new Yaml
     try {
       val r = new InputStreamReader(Files.newInputStream(file.toPath), StandardCharsets.UTF_8)
@@ -69,10 +61,10 @@ object ArchiveUtils {
   }
 
   @throws[InvalidArchiveURLException]
-  def validateURL(allowedUrls: util.List[String], url: String): Boolean = {
+  def validateURL(allowedUrls: List[String], url: String): Boolean = {
     var patternMatch = false
-    import scala.jdk.CollectionConverters._
-    for (temp <- allowedUrls.asScala) {
+    import scala.jdk.CollectionConverters.*
+    for (temp <- allowedUrls) {
       if (Pattern.compile(temp, Pattern.CASE_INSENSITIVE).matcher(url).matches) {
         patternMatch = true
         return patternMatch
@@ -99,7 +91,7 @@ object ArchiveUtils {
   @throws[FileNotFoundException]
   @throws[DownloadArchiveException]
   @throws[InvalidArchiveURLException]
-  def downloadArchive(allowedUrls: util.List[String], 
+  def downloadArchive(allowedUrls: List[String],
                       location: File, 
                       archiveName: String, 
                       url: String, s3SseKmsEnabled: Boolean): Boolean = 

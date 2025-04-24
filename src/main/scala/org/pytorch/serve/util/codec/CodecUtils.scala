@@ -7,6 +7,7 @@ import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.NotEnoughDat
 
 import java.nio.charset.StandardCharsets
 import java.util
+import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
 object CodecUtils {
   val END: Int = -1
@@ -31,9 +32,9 @@ object CodecUtils {
     buf
   }
 
-  def readMap(in: ByteBuf, lenz: Int): util.Map[String, String] = {
+  def readMap(in: ByteBuf, lenz: Int): Map[String, String] = {
     var len =lenz
-    val ret = new util.HashMap[String, String]
+    val ret = new mutable.HashMap[String, String]
     while (len > 0) {
       var l = readLength(in, 6500000) // We replace len here with 6500000 as a workaround before we
       // can fix the whole otf. Basically, were mixing up bytes
@@ -49,7 +50,7 @@ object CodecUtils {
       ret.put(key, `val`)
       len -= 1
     }
-    ret
+    ret.toMap
   }
 }
 

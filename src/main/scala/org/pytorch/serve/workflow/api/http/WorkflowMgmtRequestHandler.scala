@@ -1,38 +1,24 @@
 package org.pytorch.serve.workflow.api.http
 
-import scala.jdk.CollectionConverters.*
 import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.FullHttpRequest
-import io.netty.handler.codec.http.HttpHeaderValues
-import io.netty.handler.codec.http.HttpMethod
-import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.handler.codec.http.HttpUtil
-import io.netty.handler.codec.http.QueryStringDecoder
-
+import io.netty.handler.codec.http.*
 import io.netty.util.CharsetUtil
+import org.pytorch.serve.archive.DownloadArchiveException
+import org.pytorch.serve.archive.model.ModelException
+import org.pytorch.serve.archive.workflow.{WorkflowException, WorkflowNotFoundException}
+import org.pytorch.serve.ensemble.WorkFlow
+import org.pytorch.serve.http.*
+import org.pytorch.serve.util.{JsonUtils, NettyUtils}
+import org.pytorch.serve.wlm.WorkerInitializationException
+import org.pytorch.serve.workflow.WorkflowManager
+import org.pytorch.serve.workflow.messages.{DescribeWorkflowResponse, ListWorkflowResponse, RegisterWorkflowRequest}
 
 import java.net.HttpURLConnection
 import java.util
 import java.util.Collections
 import java.util.concurrent.ExecutionException
-import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.model.ModelException
-import org.pytorch.serve.archive.workflow.WorkflowException
-import org.pytorch.serve.archive.workflow.WorkflowNotFoundException
-import org.pytorch.serve.ensemble.WorkFlow
-import org.pytorch.serve.http.ConflictStatusException
-import org.pytorch.serve.http.HttpRequestHandlerChain
-import org.pytorch.serve.http.MethodNotAllowedException
-import org.pytorch.serve.http.ResourceNotFoundException
-import org.pytorch.serve.http.StatusResponse
-import org.pytorch.serve.util.JsonUtils
-import org.pytorch.serve.util.NettyUtils
-import org.pytorch.serve.wlm.WorkerInitializationException
-import org.pytorch.serve.workflow.WorkflowManager
-import org.pytorch.serve.workflow.messages.DescribeWorkflowResponse
-import org.pytorch.serve.workflow.messages.ListWorkflowResponse
-import org.pytorch.serve.workflow.messages.RegisterWorkflowRequest
-import  org.pytorch.serve.workflow.messages.DescribeWorkflowResponse
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 /**
  * A class handling inbound HTTP requests to the workflow management API.
@@ -88,15 +74,17 @@ class WorkflowMgmtRequestHandler extends HttpRequestHandlerChain {
     if (limit > 100 || limit < 0) limit = 100
     if (pageToken < 0) pageToken = 0
     val workflows = WorkflowManager.getInstance.getWorkflows
-    val keys = new util.ArrayList[String](workflows.keySet)
-    Collections.sort(keys)
+    val keys = new ListBuffer[String]()
+    keys :++ (workflows.keySet)
+    keys.sorted
+    //    Collections.sort(keys)
     val list = new ListWorkflowResponse
     var last = pageToken + limit
     if (last > keys.size) last = keys.size
     else list.setNextPageToken(String.valueOf(last))
     for (i <- pageToken until last) {
-      val workflowName = keys.get(i)
-      val workFlow = workflows.get(workflowName)
+      val workflowName = keys(i)
+      val workFlow = workflows.get(workflowName).get
       list.addModel(workflowName, workFlow.getWorkflowArchive.getUrl)
     }
     NettyUtils.sendJsonResponse(ctx, list)
@@ -104,10 +92,10 @@ class WorkflowMgmtRequestHandler extends HttpRequestHandlerChain {
 
   @throws[WorkflowNotFoundException]
   private def handleDescribeWorkflow(ctx: ChannelHandlerContext, workflowName: String): Unit = {
-    val resp = new util.ArrayList[DescribeWorkflowResponse]
+    val resp = new ListBuffer[DescribeWorkflowResponse]
     val workFlow = WorkflowManager.getInstance.getWorkflow(workflowName)
     if (workFlow == null) throw new WorkflowNotFoundException("Workflow not found: " + workflowName)
-    resp.add(WorkflowMgmtRequestHandler.createWorkflowResponse(workflowName, workFlow))
+    resp.append(WorkflowMgmtRequestHandler.createWorkflowResponse(workflowName, workFlow))
     NettyUtils.sendJsonResponse(ctx, resp)
   }
 

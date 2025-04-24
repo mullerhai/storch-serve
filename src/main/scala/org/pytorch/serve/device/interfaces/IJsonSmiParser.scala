@@ -1,35 +1,35 @@
 package org.pytorch.serve.device.interfaces
 
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
-import java.util
+import com.google.gson.{JsonElement, JsonObject}
 import org.pytorch.serve.device.Accelerator
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import org.slf4j.{Logger, LoggerFactory}
+
+import java.util
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 object IJsonSmiParser {
   val jsonSmiParserLogger: Logger = LoggerFactory.getLogger(classOf[IJsonSmiParser])
 }
 
 trait IJsonSmiParser {
-  def jsonOutputToAccelerators(rootObject: JsonElement, parsedAcceleratorIds: util.LinkedHashSet[Integer]): util.ArrayList[Accelerator] = {
-    val accelerators = new util.ArrayList[Accelerator]
+  def jsonOutputToAccelerators(rootObject: JsonElement, parsedAcceleratorIds: mutable.LinkedHashSet[Integer]): List[Accelerator] = {
+    val accelerators = new ListBuffer[Accelerator]
     val acceleratorObjects = extractAccelerators(rootObject)
-//    import scala.collection.JavaConversions._
-    import scala.jdk.CollectionConverters._
-    for (acceleratorObject <- acceleratorObjects.asScala) {
+    import scala.jdk.CollectionConverters.*
+    for (acceleratorObject <- acceleratorObjects) {
       val acceleratorId = extractAcceleratorId(acceleratorObject)
       if (acceleratorId != null && (parsedAcceleratorIds.isEmpty || parsedAcceleratorIds.contains(acceleratorId))) {
         val accelerator = jsonObjectToAccelerator(acceleratorObject)
-        accelerators.add(accelerator)
+        accelerators.append(accelerator)
       }
     }
-    accelerators
+    accelerators.toList
   }
 
   def extractAcceleratorId(jsonObject: JsonObject): Integer
 
   def jsonObjectToAccelerator(jsonObject: JsonObject): Accelerator
 
-  def extractAccelerators(rootObject: JsonElement): util.List[JsonObject]
+  def extractAccelerators(rootObject: JsonElement): List[JsonObject]
 }

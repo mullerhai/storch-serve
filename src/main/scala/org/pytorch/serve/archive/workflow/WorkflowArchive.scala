@@ -1,22 +1,15 @@
 package org.pytorch.serve.archive.workflow
 
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
-import com.google.gson.JsonParseException
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.io.InputStreamReader
-import java.io.Reader
-import java.nio.charset.StandardCharsets
-import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
-import java.util
+import com.google.gson.{Gson, GsonBuilder, JsonParseException}
 import org.apache.commons.io.FileUtils
 import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.utils.ArchiveUtils
-import org.pytorch.serve.archive.utils.InvalidArchiveURLException
-import org.pytorch.serve.archive.utils.ZipUtils
+import org.pytorch.serve.archive.utils.{ArchiveUtils, InvalidArchiveURLException, ZipUtils}
+
+import java.io.*
+import java.nio.charset.StandardCharsets
+import java.nio.file.{FileAlreadyExistsException, Files}
+import java.util
+import scala.collection.mutable.ListBuffer
 
 object WorkflowArchive {
   val GSON: Gson = new GsonBuilder().setPrettyPrinting.create
@@ -26,13 +19,13 @@ object WorkflowArchive {
   @throws[FileAlreadyExistsException]
   @throws[IOException]
   @throws[DownloadArchiveException]
-  def downloadWorkflow(allowedUrls: util.List[String], workflowStore: String, url: String): WorkflowArchive = downloadWorkflow(allowedUrls, workflowStore, url, false)
+  def downloadWorkflow(allowedUrls: List[String], workflowStore: String, url: String): WorkflowArchive = downloadWorkflow(allowedUrls, workflowStore, url, false)
 
   @throws[WorkflowException]
   @throws[FileAlreadyExistsException]
   @throws[IOException]
   @throws[DownloadArchiveException]
-  def downloadWorkflow(allowedUrls: util.List[String], workflowStore: String, url: String, s3SseKmsEnabled: Boolean): WorkflowArchive = {
+  def downloadWorkflow(allowedUrls: List[String], workflowStore: String, url: String, s3SseKmsEnabled: Boolean): WorkflowArchive = {
     if (workflowStore == null) throw new WorkflowNotFoundException("Workflow store has not been configured.")
     val warFileName = ArchiveUtils.getFilenameFromUrl(url)
     val workflowLocation = new File(workflowStore, warFileName)

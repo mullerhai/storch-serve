@@ -1,32 +1,15 @@
 package org.pytorch.serve
 
-import io.netty.channel.Channel
-import io.netty.channel.ChannelInitializer
-import io.netty.channel.ChannelPipeline
-import io.netty.handler.codec.http.HttpObjectAggregator
-import io.netty.handler.codec.http.HttpServerCodec
+import io.netty.channel.{Channel, ChannelInitializer, ChannelPipeline}
+import io.netty.handler.codec.http.{HttpObjectAggregator, HttpServerCodec}
 import io.netty.handler.ssl.SslContext
-import org.pytorch.serve.http.ExtendedSSLHandler
-import org.pytorch.serve.http.HttpRequestHandler
-import org.pytorch.serve.http.HttpRequestHandlerChain
-import org.pytorch.serve.http.InvalidRequestHandler
-import org.pytorch.serve.http.TokenAuthorizationHandler
-import org.pytorch.serve.http.api.rest.ApiDescriptionRequestHandler
-import org.pytorch.serve.http.api.rest.InferenceRequestHandler
-import org.pytorch.serve.http.api.rest.ManagementRequestHandler
-import org.pytorch.serve.http.api.rest.OpenInferenceProtocolRequestHandler
-import org.pytorch.serve.http.api.rest.PrometheusMetricsRequestHandler
+import org.pytorch.serve.http.*
+import org.pytorch.serve.http.api.rest.*
 import org.pytorch.serve.servingsdk.impl.PluginsManager
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.ConnectorType
 import org.pytorch.serve.util.TokenAuthorization.TokenType
-import org.pytorch.serve.workflow.api.http.WorkflowInferenceRequestHandler
-import org.pytorch.serve.workflow.api.http.WorkflowMgmtRequestHandler
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import  org.pytorch.serve.http.api.rest.OpenInferenceProtocolRequestHandler
-import  org.pytorch.serve.servingsdk.impl.PluginsManager
-import  org.pytorch.serve.util.ConfigManager
+import org.pytorch.serve.util.{ConfigManager, ConnectorType}
+import org.pytorch.serve.workflow.api.http.{WorkflowInferenceRequestHandler, WorkflowMgmtRequestHandler}
+import org.slf4j.{Logger, LoggerFactory}
 
 /**
  * A special {@link io.netty.channel.ChannelInboundHandler} which offers an easy way to initialize a
@@ -41,7 +24,7 @@ object ServerInitializer {
  * Creates a new {@code HttpRequestHandler} instance.
  *
  * @param sslCtx null if SSL is not enabled
- * @param type   true to initialize a management server instead of an API Server
+ * @param types  true to initialize a management server instead of an API Server
  */
 class ServerInitializer(private var sslCtx: SslContext, private var connectorType: ConnectorType) extends ChannelInitializer[Channel] {
   /** {@inheritDoc } */

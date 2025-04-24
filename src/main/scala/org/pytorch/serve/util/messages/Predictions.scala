@@ -1,19 +1,21 @@
 package org.pytorch.serve.util.messages
 
 import java.util
+import scala.collection.mutable
 
 class Predictions {
   private var requestId: String = null
   private var statusCode = 0
   private var reasonPhrase: String = null
   private var contentType: String = null
-  private var headers: util.Map[String, String] = null
+  private var headers: mutable.Map[String, String] = mutable.Map.empty
   private var resp: Array[Byte] = null
 
-  def getHeaders: util.Map[String, String] = headers
+  def getHeaders: Map[String, String] = headers.toMap
 
-  def setHeaders(headers: util.Map[String, String]): Unit = {
-    this.headers = headers
+  def setHeaders(headers: Map[String, String]): Unit = {
+    //    headers.toList.map((k,v) =>this.headers.+)
+    this.headers.++=(headers) // headers
   }
 
   def getRequestId: String = requestId

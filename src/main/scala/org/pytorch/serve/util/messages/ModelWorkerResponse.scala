@@ -1,11 +1,12 @@
 package org.pytorch.serve.util.messages
 
 import java.util
+import scala.collection.mutable.ListBuffer
 
 class ModelWorkerResponse {
   private var code = 0
   private var message: String = null
-  private var predictions: util.List[Predictions] = null
+  private var predictions: ListBuffer[Predictions] = new ListBuffer[Predictions]
 
   def getCode: Int = code
 
@@ -19,13 +20,13 @@ class ModelWorkerResponse {
     this.message = message
   }
 
-  def getPredictions: util.List[Predictions] = predictions
+  def getPredictions: List[Predictions] = predictions.toList
 
-  def setPredictions(predictions: util.List[Predictions]): Unit = {
-    this.predictions = predictions
+  def setPredictions(predictions: List[Predictions]): Unit = {
+    this.predictions.appendAll(predictions)
   }
 
   def appendPredictions(prediction: Predictions): Unit = {
-    this.predictions.add(prediction)
+    this.predictions.append(prediction)
   }
 }

@@ -1,11 +1,9 @@
 package org.pytorch.serve.metrics
 
 import org.pytorch.serve.metrics.MetricBuilder.MetricType.{COUNTER, GAUGE, HISTOGRAM}
+import org.pytorch.serve.metrics.format.prometheous.{PrometheusCounter, PrometheusGauge, PrometheusHistogram}
 
 import java.util
-import org.pytorch.serve.metrics.format.prometheous.PrometheusCounter
-import org.pytorch.serve.metrics.format.prometheous.PrometheusGauge
-import org.pytorch.serve.metrics.format.prometheous.PrometheusHistogram
 
 object MetricBuilder {
   private val legacyPrometheusMetrics = new util.HashSet[String](util.Arrays.asList("ts_inference_requests_total", "ts_inference_latency_microseconds", "ts_queue_latency_microseconds"))
@@ -25,7 +23,7 @@ object MetricBuilder {
 //    val COUNTER, GAUGE, HISTOGRAM = Value
 //  }
 
-  def build(mode: MetricBuilder.MetricMode, `type`: MetricBuilder.MetricType, name: String, unit: String, dimensionNames: util.List[String]): IMetric = {
+  def build(mode: MetricBuilder.MetricMode, `type`: MetricBuilder.MetricType, name: String, unit: String, dimensionNames: List[String]): IMetric = {
     if (mode eq MetricMode.PROMETHEUS) `type` match {
       case COUNTER =>
         return new PrometheusCounter(`type`, name, unit, dimensionNames)

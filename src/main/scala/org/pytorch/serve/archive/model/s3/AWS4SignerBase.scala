@@ -5,11 +5,10 @@ import java.net.URL
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util
-import java.util.Collections
-import java.util.SimpleTimeZone
+import java.util.{Collections, SimpleTimeZone}
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
-
+import scala.collection.mutable.{ListBuffer, TreeMap, Map as MutableMap}
 /** Common methods and properties for all AWS4 signer variants */
 object AWS4SignerBase {
   /** SHA256 hash of an empty request body * */
@@ -26,13 +25,16 @@ object AWS4SignerBase {
    * Returns the canonical collection of header names that will be included in the signature. For
    * AWS4, all header names must be included in the process in sorted canonicalized order.
    */
-  def getCanonicalizeHeaderNames(headers: util.Map[String, String]): String = {
-    val sortedHeaders = new util.ArrayList[String]
-    sortedHeaders.addAll(headers.keySet)
-    Collections.sort(sortedHeaders, String.CASE_INSENSITIVE_ORDER)
+  def getCanonicalizeHeaderNames(headers: MutableMap[String, String]): String = {
+    //    val sortedHeaders = new util.ArrayList[String]
+    //    sortedHeaders.addAll(headers.keySet)
+    //    Collections.sort(sortedHeaders, String.CASE_INSENSITIVE_ORDER)
+    val sortedHeaders = ListBuffer.empty[String]
+    sortedHeaders ++= headers.keys
+    sortedHeaders.sortWith((a, b) => a.compareToIgnoreCase(b) < 0)
     val buffer = new StringBuilder
-    import scala.jdk.CollectionConverters._
-    for (header <- sortedHeaders.asScala) {
+    import scala.jdk.CollectionConverters.*
+    for (header <- sortedHeaders) {
       if (buffer.length > 0) buffer.append(';')
       buffer.append(header.toLowerCase)
     }
@@ -43,19 +45,22 @@ object AWS4SignerBase {
    * Computes the canonical headers with values for the request. For AWS4, all headers must be
    * included in the signing process.
    */
-   def getCanonicalizedHeaderString(headers: util.Map[String, String]): String = {
+  def getCanonicalizedHeaderString(headers: MutableMap[String, String]): String = {
     if (headers == null || headers.isEmpty) return ""
     // step1: sort the headers by case-insensitive order
-    val sortedHeaders = new util.ArrayList[String]
-    sortedHeaders.addAll(headers.keySet)
-    Collections.sort(sortedHeaders, String.CASE_INSENSITIVE_ORDER)
+    //      val sortedHeaders = new util.ArrayList[String]
+    //      sortedHeaders.addAll(headers.keySet)
+    //      Collections.sort(sortedHeaders, String.CASE_INSENSITIVE_ORDER)
+    val sortedHeaders = ListBuffer.empty[String]
+    sortedHeaders ++= headers.keys
+    sortedHeaders.sortWith((a, b) => a.compareToIgnoreCase(b) < 0)
     // step2: form the canonical header:value entries in sorted order.
     // Multiple white spaces in the values should be compressed to a single
     // space.
     val buffer = new StringBuilder
-    import scala.jdk.CollectionConverters._
-    for (key <- sortedHeaders.asScala) {
-      buffer.append(key.toLowerCase.replaceAll("\\s+", " ") + ":" + headers.get(key).replaceAll("\\s+", " "))
+    import scala.jdk.CollectionConverters.*
+    for (key <- sortedHeaders) {
+      buffer.append(key.toLowerCase.replaceAll("\\s+", " ") + ":" + headers.getOrElse(key, "").replaceAll("\\s+", " "))
       buffer.append('\n')
     }
     buffer.toString
@@ -81,6 +86,9 @@ object AWS4SignerBase {
     else "/".concat(encodedPath)
   }
 
+  implicit val caseInsensitiveOrdering: Ordering[String] =
+    Ordering.comparatorToOrdering(String.CASE_INSENSITIVE_ORDER)
+
   /**
    * Examines the specified query string parameters and returns a canonicalized form.
    *
@@ -92,23 +100,35 @@ object AWS4SignerBase {
    * @return A canonicalized form for the specified query string parameters.
    */
   @throws[UnsupportedEncodingException]
-  def getCanonicalizedQueryString(parameters: util.Map[String, String]): String = {
+  def getCanonicalizedQueryString(parameters: Map[String, String]): String = {
     if (parameters == null || parameters.isEmpty) return ""
-    val sorted = new util.TreeMap[String, String]
-    var pairs = parameters.entrySet.iterator
+    //    val sorted = TreeMap(
+    //      parameters.map { case (k, v) =>
+    //        (HttpUtils.urlEncode(k, false), HttpUtils.urlEncode(v, false))
+    //      }.toSeq: _*
+    //    )
+    //
+    //    // 构建查询字符串
+    //    sorted.iterator
+    //      .map { case (k, v) => s"$k=$v" }
+    //      .mkString("&")
+    val sorted = new TreeMap[String, String]
+    var pairs = parameters.iterator
     while (pairs.hasNext) {
       val pair = pairs.next
-      val key = pair.getKey
-      val value = pair.getValue
-      sorted.put(HttpUtils.urlEncode(key, false), HttpUtils.urlEncode(value, false))
+      val key = pair._1 //.getKey
+      val value = pair._2 //.getValue
+      val urlKey = HttpUtils.urlEncode(key, false)
+      val urlValue = HttpUtils.urlEncode(value, false)
+      sorted += (urlKey -> urlValue)
     }
     val builder = new StringBuilder
-    pairs = sorted.entrySet.iterator
+    pairs = sorted.iterator
     while (pairs.hasNext) {
       val pair = pairs.next
-      builder.append(pair.getKey)
+      builder.append(pair._1) //.getKey)
       builder.append('=')
-      builder.append(pair.getValue)
+      builder.append(pair._2) //.getValue)
       if (pairs.hasNext) builder.append('&')
     }
     builder.toString

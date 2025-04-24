@@ -1,32 +1,28 @@
 package org.pytorch.serve.util
 
-import scala.jdk.CollectionConverters.*
-import io.netty.channel.Channel
-import io.netty.channel.ChannelFuture
-import io.netty.channel.EventLoopGroup
-import io.netty.channel.group.ChannelGroup
-import io.netty.channel.group.ChannelGroupFuture
-import io.netty.channel.group.DefaultChannelGroup
+import io.netty.channel.group.{ChannelGroup, ChannelGroupFuture, DefaultChannelGroup}
+import io.netty.channel.{Channel, ChannelFuture, EventLoopGroup}
 import io.netty.util.concurrent.GlobalEventExecutor
 import org.pytorch.serve.util.Connector
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.util
 import java.util.concurrent.TimeUnit
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 object ServerGroups {
   private val logger = LoggerFactory.getLogger(classOf[ServerGroups])
 }
 
 class ServerGroups(private var configManager: ConfigManager) {
-  init()
+
   private var allChannels: ChannelGroup = null
   private var serverGroup: EventLoopGroup = null
   private var childGroup: EventLoopGroup = null
   private var metricsGroup: EventLoopGroup = null
   private var backendGroup: EventLoopGroup = null
+  init()
 
   final def init(): Unit = {
     allChannels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE)
@@ -38,18 +34,17 @@ class ServerGroups(private var configManager: ConfigManager) {
 
   def shutdown(graceful: Boolean): Unit = {
     closeAllChannels(graceful)
-    val allEventLoopGroups = new util.ArrayList[EventLoopGroup]
-    allEventLoopGroups.add(serverGroup)
-    allEventLoopGroups.add(childGroup)
-    if (configManager.isMetricApiEnable) allEventLoopGroups.add(metricsGroup)
-//    import scala.collection.JavaConversions._
-    for (group <- allEventLoopGroups.asScala) {
+    val allEventLoopGroups = new ListBuffer[EventLoopGroup]
+    allEventLoopGroups.append(serverGroup)
+    allEventLoopGroups.append(childGroup)
+    if (configManager.isMetricApiEnable) allEventLoopGroups.append(metricsGroup)
+    for (group <- allEventLoopGroups) {
       if (graceful) group.shutdownGracefully
       else group.shutdownGracefully(0, 0, TimeUnit.SECONDS)
     }
     if (graceful) {
-//      import scala.collection.JavaConversions._
-      for (group <- allEventLoopGroups.asScala) {
+
+      for (group <- allEventLoopGroups) {
         try group.awaitTermination(60, TimeUnit.SECONDS)
         catch {
           case e: InterruptedException =>

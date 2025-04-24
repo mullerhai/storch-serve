@@ -1,18 +1,14 @@
 package org.pytorch.serve.archive.model
 
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
-import java.util
 import org.apache.commons.io.FileUtils
 import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.utils.ArchiveUtils
-import org.pytorch.serve.archive.utils.InvalidArchiveURLException
-import org.pytorch.serve.archive.utils.ZipUtils
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import org.pytorch.serve.archive.utils.{ArchiveUtils, InvalidArchiveURLException, ZipUtils}
+import org.slf4j.{Logger, LoggerFactory}
+
+import java.io.{File, IOException, InputStream}
+import java.nio.file.{FileAlreadyExistsException, Files}
+import java.util
+import scala.collection.mutable.ListBuffer
 
 object ModelArchive {
   private val logger = LoggerFactory.getLogger(classOf[ModelArchive])
@@ -22,13 +18,13 @@ object ModelArchive {
   @throws[FileAlreadyExistsException]
   @throws[IOException]
   @throws[DownloadArchiveException]
-  def downloadModel(allowedUrls: util.List[String], modelStore: String, url: String): ModelArchive = downloadModel(allowedUrls, modelStore, url, false)
+  def downloadModel(allowedUrls: List[String], modelStore: String, url: String): ModelArchive = downloadModel(allowedUrls, modelStore, url, false)
 
   @throws[ModelException]
   @throws[FileAlreadyExistsException]
   @throws[IOException]
   @throws[DownloadArchiveException]
-  def downloadModel(allowedUrls: util.List[String], modelStore: String, url: String, s3SseKmsEnabled: Boolean): ModelArchive = {
+  def downloadModel(allowedUrls: List[String], modelStore: String, url: String, s3SseKmsEnabled: Boolean): ModelArchive = {
     if (modelStore == null) throw new ModelNotFoundException("Model store has not been configured.")
     if (url == null || url.isEmpty) throw new ModelNotFoundException("empty url")
     if (url.contains("..")) throw new ModelNotFoundException("Relative path is not allowed in url: " + url)

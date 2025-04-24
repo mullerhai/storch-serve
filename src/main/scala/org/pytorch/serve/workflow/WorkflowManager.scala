@@ -1,54 +1,27 @@
 package org.pytorch.serve.workflow
 
-import scala.jdk.CollectionConverters.*
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import com.google.gson.{JsonObject, JsonParser}
 import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.DefaultFullHttpResponse
-import io.netty.handler.codec.http.FullHttpResponse
-import io.netty.handler.codec.http.HttpHeaderNames
-import io.netty.handler.codec.http.HttpHeaderValues
-import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.handler.codec.http.HttpVersion
+import io.netty.handler.codec.http.*
+import org.pytorch.serve.archive.DownloadArchiveException
+import org.pytorch.serve.archive.model.{ModelNotFoundException, ModelVersionNotFoundException}
+import org.pytorch.serve.archive.workflow.{InvalidWorkflowException, WorkflowArchive, WorkflowException, WorkflowNotFoundException}
+import org.pytorch.serve.ensemble.*
+import org.pytorch.serve.http.{BadRequestException, ConflictStatusException, InternalServerException, StatusResponse}
+import org.pytorch.serve.util.messages.RequestInput
+import org.pytorch.serve.util.{ApiUtils, ConfigManager, NettyUtils}
+import org.pytorch.serve.workflow.messages.ModelRegistrationResult
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.nio.charset.StandardCharsets
 import java.util
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionService
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.ExecutorCompletionService
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.Future
-import java.util.concurrent.ThreadFactory
-import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
-import org.pytorch.serve.archive.workflow.InvalidWorkflowException
-import org.pytorch.serve.archive.workflow.WorkflowArchive
-import org.pytorch.serve.archive.workflow.WorkflowException
-import org.pytorch.serve.archive.workflow.WorkflowNotFoundException
-import org.pytorch.serve.ensemble.DagExecutor
-import org.pytorch.serve.ensemble.InvalidDAGException
-import org.pytorch.serve.ensemble.Node
-import org.pytorch.serve.ensemble.NodeOutput
-import org.pytorch.serve.ensemble.WorkFlow
-import org.pytorch.serve.ensemble.WorkflowModel
-import org.pytorch.serve.http.BadRequestException
-import org.pytorch.serve.http.ConflictStatusException
-import org.pytorch.serve.http.InternalServerException
-import org.pytorch.serve.http.StatusResponse
-import org.pytorch.serve.util.ApiUtils
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.NettyUtils
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.workflow.messages.ModelRegistrationResult
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import java.util.concurrent.*
+import scala.collection.concurrent.TrieMap
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 
 object WorkflowManager {
@@ -66,8 +39,8 @@ final class WorkflowManager private(private val configManager: ConfigManager) {
   
   final private val namedThreadFactory = new ThreadFactoryBuilder().setNameFormat("wf-manager-thread-%d").build
   final private val inferenceExecutorService = Executors.newFixedThreadPool(Runtime.getRuntime.availableProcessors, namedThreadFactory)
-  final private var workflowMap: ConcurrentHashMap[String, WorkFlow] = new ConcurrentHashMap[String, WorkFlow]
-
+  //  final private var workflowMap: ConcurrentHashMap[String, WorkFlow] = new ConcurrentHashMap[String, WorkFlow]
+  final private var workflowMap: TrieMap[String, WorkFlow] = new TrieMap[String, WorkFlow]
   @throws[DownloadArchiveException]
   @throws[IOException]
   @throws[WorkflowException]
@@ -98,19 +71,19 @@ final class WorkflowManager private(private val configManager: ConfigManager) {
     val executorService = Executors.newFixedThreadPool(4)
     val executorCompletionService = new ExecutorCompletionService[ModelRegistrationResult](executorService)
     var failed = false
-    val failedMessages = new util.ArrayList[String]
-    val successNodes = new util.ArrayList[String]
+    val failedMessages = new ListBuffer[String]
+    val successNodes = new ListBuffer[String]
     try {
       val archive = createWorkflowArchive(workflowName, url)
       val workflow = createWorkflow(archive)
       if (workflowMap.get(workflow.getWorkflowArchive.getWorkflowName) != null) throw new ConflictStatusException("Workflow " + workflow.getWorkflowArchive.getWorkflowName + " is already registered.")
       val nodes = workflow.getDag.getNodes
-      val futures = new util.ArrayList[Future[ModelRegistrationResult]]
+      val futures = new ListBuffer[Future[ModelRegistrationResult]]
 //      import scala.collection.JavaConversions._
-      for (entry <- nodes.entrySet.asScala) {
-        val node = entry.getValue
+      for (entry <- nodes.toSeq) {
+        val node = entry._2 //.getValue
         val wfm = node.getWorkflowModel
-        futures.add(executorCompletionService.submit(() => registerModelWrapper(wfm, responseTimeout, startupTimeout, synchronous)))
+        futures.append(executorCompletionService.submit(() => registerModelWrapper(wfm, responseTimeout, startupTimeout, synchronous)))
       }
       var i = 0
       while (i < futures.size) {
@@ -123,18 +96,18 @@ final class WorkflowManager private(private val configManager: ConfigManager) {
           var msg: String = null
           if (result.response.getStatus == null) msg = "Failed to register the model " + result.modelName + ". Check error logs."
           else msg = result.response.getStatus
-          failedMessages.add(msg)
+          failedMessages.append(msg)
         }
-        else successNodes.add(result.modelName)
+        else successNodes.append(result.modelName)
       }
       if (failed) {
         var rollbackFailure: String = null
-        try removeArtifacts(workflowName, workflow, successNodes)
+        try removeArtifacts(workflowName, workflow, successNodes.toList)
         catch {
           case e: Exception =>
             rollbackFailure = "Error while doing rollback of failed workflow. Details" + e.getMessage
         }
-        if (rollbackFailure != null) failedMessages.add(rollbackFailure)
+        if (rollbackFailure != null) failedMessages.append(rollbackFailure)
         status.setHttpResponseCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
         val message = String.format("Workflow %s has failed to register. Failures: %s", workflow.getWorkflowArchive.getWorkflowName, failedMessages.toString)
         status.setStatus(message)
@@ -178,21 +151,9 @@ final class WorkflowManager private(private val configManager: ConfigManager) {
     new ModelRegistrationResult(wfm.name, status)
   }
 
-  def getWorkflows: ConcurrentHashMap[String, WorkFlow] = workflowMap
-
-  @throws[WorkflowNotFoundException]
-  @throws[InterruptedException]
-  @throws[ExecutionException]
-  def unregisterWorkflow(workflowName: String, successNodes: util.ArrayList[String]): Unit = {
-    val workflow = workflowMap.get(workflowName)
-    if (workflow == null) throw new WorkflowNotFoundException("Workflow not found: " + workflowName)
-    workflowMap.remove(workflowName)
-    removeArtifacts(workflowName, workflow, successNodes)
-  }
-
   @throws[ExecutionException]
   @throws[InterruptedException]
-  def removeArtifacts(workflowName: String, workflow: WorkFlow, successNodes: util.ArrayList[String]): Unit = {
+  def removeArtifacts(workflowName: String, workflow: WorkFlow, successNodes: List[String]): Unit = {
     WorkflowArchive.removeWorkflow(configManager.getWorkflowStore, workflow.getWorkflowArchive.getUrl)
     val nodes = workflow.getDag.getNodes
     unregisterModels(workflowName, nodes, successNodes)
@@ -200,15 +161,15 @@ final class WorkflowManager private(private val configManager: ConfigManager) {
 
   @throws[InterruptedException]
   @throws[ExecutionException]
-  def unregisterModels(workflowName: String, nodes: util.Map[String, Node], successNodes: util.ArrayList[String]): Unit = {
+  def unregisterModels(workflowName: String, nodes: Map[String, Node], successNodes: List[String]): Unit = {
     val executorService = Executors.newFixedThreadPool(4)
     val executorCompletionService = new ExecutorCompletionService[ModelRegistrationResult](executorService)
-    val futures = new util.ArrayList[Future[ModelRegistrationResult]]
+    val futures = new ListBuffer[Future[ModelRegistrationResult]]
 //    import scala.collection.JavaConversions._
-    for (entry <- nodes.entrySet.asScala) {
-      val node = entry.getValue
+    for (entry <- nodes.toSeq) {
+      val node = entry._2 //.getValue
       val wfm = node.getWorkflowModel
-      futures.add(executorCompletionService.submit(() => {
+      futures.append(executorCompletionService.submit(() => {
         val status = new StatusResponse
         try {
           ApiUtils.unregisterModel(wfm.name, null)
@@ -237,39 +198,51 @@ final class WorkflowManager private(private val configManager: ConfigManager) {
     }
     var i = 0
     var failed = false
-    val failedMessages = new util.ArrayList[String]
+    val failedMessages = new ListBuffer[String]
     while (i < futures.size) {
       i += 1
       val future = executorCompletionService.take
       val result = future.get
       if (result.response.getHttpResponseCode != HttpURLConnection.HTTP_OK) {
         failed = true
-        failedMessages.add(result.response.getStatus)
+        failedMessages.append(result.response.getStatus)
       }
     }
     if (failed) throw new InternalServerException("Error while unregistering the workflow " + workflowName + ". Details: " + failedMessages.toArray.toString)
     executorService.shutdown()
   }
 
-  def getWorkflow(workflowName: String): WorkFlow = workflowMap.get(workflowName)
+  def getWorkflows: TrieMap[String, WorkFlow] = workflowMap
+
+  //  def getWorkflows: ConcurrentHashMap[String, WorkFlow] = workflowMap
+  @throws[WorkflowNotFoundException]
+  @throws[InterruptedException]
+  @throws[ExecutionException]
+  def unregisterWorkflow(workflowName: String, successNodes: List[String]): Unit = {
+    val workflow = workflowMap.get(workflowName)
+    if (workflow == null) throw new WorkflowNotFoundException("Workflow not found: " + workflowName)
+    workflowMap.remove(workflowName)
+    removeArtifacts(workflowName, workflow.get, successNodes)
+  }
+
+  def getWorkflow(workflowName: String): WorkFlow = workflowMap.get(workflowName).get
 
   @throws[WorkflowNotFoundException]
   def predict(ctx: ChannelHandlerContext, wfName: String, input: RequestInput): Unit = {
     val wf = workflowMap.get(wfName)
     if (wf != null) {
-      val dagExecutor = new DagExecutor(wf.getDag)
+      val dagExecutor = new DagExecutor(wf.get.getDag)
       val predictionFuture = CompletableFuture.supplyAsync(() => dagExecutor.execute(input, null))
-      predictionFuture.thenApplyAsync((predictions: util.ArrayList[NodeOutput]) => {
+      predictionFuture.thenApplyAsync((predictions: List[NodeOutput]) => {
         if (!predictions.isEmpty) if (predictions.size == 1) {
           val resp = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, true)
           resp.headers.set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON)
-          resp.content.writeBytes(predictions.get(0).getData.asInstanceOf[Array[Byte]])
+          resp.content.writeBytes(predictions(0).getData.asInstanceOf[Array[Byte]])
           NettyUtils.sendHttpResponse(ctx, resp, true)
         }
         else {
           val result = new JsonObject
-//          import scala.collection.JavaConversions._
-          for (prediction <- predictions.asScala) {
+          for (prediction <- predictions) {
             val `val` = new String(prediction.getData.asInstanceOf[Array[Byte]], StandardCharsets.UTF_8)
             result.add(prediction.getNodeName, JsonParser.parseString(`val`).getAsJsonObject)
           }
@@ -279,7 +252,7 @@ final class WorkflowManager private(private val configManager: ConfigManager) {
         null
       }, inferenceExecutorService).exceptionally((ex: Throwable) => {
         val error = ex.getMessage.split(":")
-        NettyUtils.sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, new InternalServerException(error(error.length - 1).strip))
+        NettyUtils.sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, new InternalServerException(error(error.length - 1).trim))
         null
       })
     }

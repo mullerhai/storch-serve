@@ -1,31 +1,20 @@
 package org.pytorch.serve.ensemble
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-
-import java.util
-import java.util.UUID
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionService
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.ExecutorCompletionService
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.Future
-import java.util.concurrent.ThreadFactory
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
+import org.pytorch.serve.archive.model.{ModelNotFoundException, ModelVersionNotFoundException}
 import org.pytorch.serve.http.InternalServerException
 import org.pytorch.serve.job.RestJob
 import org.pytorch.serve.util.ApiUtils
-import org.pytorch.serve.util.messages.InputParameter
-import org.pytorch.serve.util.messages.RequestInput
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import org.pytorch.serve.util.messages.{InputParameter, RequestInput}
+import org.slf4j.{Logger, LoggerFactory}
 
+import java.util
+import java.util.UUID
+import java.util.concurrent.*
 import scala.annotation.tailrec
+import scala.collection.concurrent.TrieMap
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 
 object DagExecutor {
@@ -34,9 +23,10 @@ object DagExecutor {
 
 class DagExecutor(private var dag: Dag) {
 
-  private var inputRequestMap: util.Map[String, RequestInput] = new ConcurrentHashMap[String, RequestInput]
+  //  private var inputRequestMap: mutable.Map[String, RequestInput] = new ConcurrentHashMap[String, RequestInput]
+  private var inputRequestMap = new TrieMap[String, RequestInput]()
 
-  def execute(input: RequestInput, topoSortedList: util.ArrayList[String]): util.ArrayList[NodeOutput] = {
+  def execute(input: RequestInput, topoSortedList: ListBuffer[String]): List[NodeOutput] = {
     var executorCompletionService: CompletionService[NodeOutput] = null
     var executorService: ExecutorService = null
     if (topoSortedList == null) {
@@ -46,31 +36,31 @@ class DagExecutor(private var dag: Dag) {
     }
     val inDegreeMap = this.dag.getInDegreeMap
     val zeroInDegree = dag.getStartNodeNames
-    val executing = new util.HashSet[String]
+    val executing = new mutable.HashSet[String]
     if (topoSortedList == null) {
 //      import scala.collection.JavaConversions._
-      for (s <- zeroInDegree.asScala) {
+      for (s <- zeroInDegree) {
         val newInput = new RequestInput(UUID.randomUUID.toString)
         newInput.setHeaders(input.getHeaders)
         newInput.setParameters(input.getParameters)
         inputRequestMap.put(s, newInput)
       }
     }
-    val leafOutputs = new util.ArrayList[NodeOutput]
+    val leafOutputs = new ListBuffer[NodeOutput]
     while (!zeroInDegree.isEmpty) {
-      val readyToExecute = new util.HashSet[String](zeroInDegree)
-      readyToExecute.removeAll(executing)
-      executing.addAll(readyToExecute)
-      val outputs = new util.ArrayList[NodeOutput]
+      val readyToExecute = new mutable.HashSet[String] //(zeroInDegree)
+      readyToExecute.++=(zeroInDegree)
+      readyToExecute.--=(executing)
+      executing.++=(readyToExecute)
+      val outputs = new ListBuffer[NodeOutput]
       if (topoSortedList == null) {
-//        import scala.collection.JavaConversions._
-        for (name <- readyToExecute.asScala) {
-          executorCompletionService.submit(() => invokeModel(name, this.dag.getNodes.get(name).getWorkflowModel, inputRequestMap.get(name), 0))
+        for (name <- readyToExecute) {
+          executorCompletionService.submit(() => invokeModel(name, this.dag.getNodes.get(name).get.getWorkflowModel, inputRequestMap.get(name).get, 0))
         }
         try {
           val op = executorCompletionService.take
           if (op == null) throw new ExecutionException(new RuntimeException("WorkflowNode result empty"))
-          else outputs.add(op.get)
+          else outputs.append(op.get)
         } catch {
           case e@(_: InterruptedException | _: ExecutionException) =>
             DagExecutor.logger.error(e.getMessage)
@@ -79,44 +69,42 @@ class DagExecutor(private var dag: Dag) {
         }
       }
       else {
-//        import scala.collection.JavaConversions._
-        for (name <- readyToExecute.asScala) {
-          outputs.add(new NodeOutput(name, null))
+        for (name <- readyToExecute) {
+          outputs.append(new NodeOutput(name, null))
         }
       }
-//      import scala.collection.JavaConversions._
-      for (output <- outputs.asScala) {
+
+      for (output <- outputs) {
         val nodeName = output.getNodeName
         executing.remove(nodeName)
         zeroInDegree.remove(nodeName)
-        if (topoSortedList != null) topoSortedList.add(nodeName)
+        if (topoSortedList != null) topoSortedList.append(nodeName)
         val childNodes = this.dag.getDagMap.get(nodeName).get("outDegree")
-        if (childNodes.isEmpty) leafOutputs.add(output)
+        if (childNodes.isEmpty) leafOutputs.append(output)
         else {
-//          import scala.collection.JavaConversions._
-          for (newNodeName <- childNodes.asScala) {
+          for (newNodeName <- childNodes) {
             if (topoSortedList == null) {
               val response = output.getData.asInstanceOf[Array[Byte]]
               var newInput = this.inputRequestMap.get(newNodeName)
-              if (newInput == null) {
-                val params = new util.ArrayList[InputParameter]
-                newInput = new RequestInput(UUID.randomUUID.toString)
-                if (inDegreeMap.get(newNodeName) eq 1) params.add(new InputParameter("body", response))
-                else params.add(new InputParameter(nodeName, response))
-                newInput.setParameters(params)
+              if (newInput.isEmpty) {
+                val params = new ListBuffer[InputParameter]
+                val newInput = new RequestInput(UUID.randomUUID.toString)
+                if (inDegreeMap.get(newNodeName) eq 1) params.append(new InputParameter("body", response))
+                else params.append(new InputParameter(nodeName, response))
+                newInput.setParameters(params.toList)
                 newInput.setHeaders(input.getHeaders)
               }
-              else newInput.addParameter(new InputParameter(nodeName, response))
-              this.inputRequestMap.put(newNodeName, newInput)
+              else newInput.get.addParameter(new InputParameter(nodeName, response))
+              this.inputRequestMap.put(newNodeName, newInput.get)
             }
-            inDegreeMap.replace(newNodeName, inDegreeMap.get(newNodeName) - 1)
+            inDegreeMap.update(newNodeName, inDegreeMap.get(newNodeName).get - 1)
             if (inDegreeMap.get(newNodeName) eq 0) zeroInDegree.add(newNodeName)
           }
         }
       }
     }
     if (executorService != null) executorService.shutdown()
-    leafOutputs
+    leafOutputs.toList
   }
 
   @throws[ModelNotFoundException]

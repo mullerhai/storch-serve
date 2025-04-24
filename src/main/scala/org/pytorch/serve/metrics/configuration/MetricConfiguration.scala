@@ -1,16 +1,14 @@
 package org.pytorch.serve.metrics.configuration
 
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileNotFoundException
-import java.util
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import org.yaml.snakeyaml.LoaderOptions
-import org.yaml.snakeyaml.Yaml
+import org.slf4j.{Logger, LoggerFactory}
 import org.yaml.snakeyaml.composer.ComposerException
 import org.yaml.snakeyaml.constructor.Constructor
-import scala.jdk.CollectionConverters._
+import org.yaml.snakeyaml.{LoaderOptions, Yaml}
+
+import java.io.{File, FileInputStream, FileNotFoundException}
+import java.util
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 object MetricConfiguration {
   private val logger = LoggerFactory.getLogger(classOf[MetricConfiguration])
 
@@ -29,17 +27,17 @@ object MetricConfiguration {
 }
 
 class MetricConfiguration {
-  private var dimensions: util.List[String] = null
+  private var dimensions: ListBuffer[String] = null
   @SuppressWarnings(Array("checkstyle:MemberName")) 
   private var ts_metrics:MetricTypes = null
   @SuppressWarnings(Array("checkstyle:MemberName")) 
   private var model_metrics:MetricTypes  = null
 
-  def setDimensions(dimensions: util.List[String]): Unit = {
-    this.dimensions = dimensions
-  }
+  def getDimensions: List[String] = this.dimensions.toList
 
-  def getDimensions: util.List[String] = this.dimensions
+  def setDimensions(dimensions: List[String]): Unit = {
+    this.dimensions.appendAll(dimensions)
+  }
 
   @SuppressWarnings(Array("checkstyle:MethodName")) 
   def setTs_metrics(tsMetrics: MetricTypes): Unit = {
@@ -65,12 +63,12 @@ class MetricConfiguration {
     if (this.model_metrics != null) model_metrics.validate()
   }
 
-  private def addHostnameDimensionToMetrics(metricsSpec: util.List[MetricSpecification]): util.List[MetricSpecification] = {
+  private def addHostnameDimensionToMetrics(metricsSpec: List[MetricSpecification]): List[MetricSpecification] = {
     if (metricsSpec == null) return metricsSpec
 //    import scala.collection.JavaConversions._
-    for (spec <- metricsSpec.asScala) {
+    for (spec <- metricsSpec) {
       val dimensions = spec.getDimensions
-      dimensions.add("Hostname")
+      dimensions.appended("Hostname")
       spec.setDimensions(dimensions)
     }
     metricsSpec

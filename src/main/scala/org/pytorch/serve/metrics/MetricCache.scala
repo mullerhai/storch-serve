@@ -1,15 +1,13 @@
 package org.pytorch.serve.metrics
 
+import org.pytorch.serve.metrics.configuration.{MetricConfiguration, MetricSpecification}
+import org.pytorch.serve.util.ConfigManager
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.io.FileNotFoundException
 import java.util
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentMap
-import org.pytorch.serve.metrics.configuration.MetricConfiguration
-import org.pytorch.serve.metrics.configuration.MetricSpecification
-import org.pytorch.serve.util.ConfigManager
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+import scala.jdk.CollectionConverters.*
 
 object MetricCache {
   private val logger = LoggerFactory.getLogger(classOf[MetricCache])
@@ -54,21 +52,21 @@ final class MetricCache {
 //  private var metricsFrontend: ConcurrentMap[String, IMetric] = null
 //  private var metricsBackend: ConcurrentMap[String, IMetric] = null
 
-  private def addMetrics(metricCache: ConcurrentMap[String, IMetric], metricsSpec: util.List[MetricSpecification], metricMode: MetricBuilder.MetricMode, metricType: MetricBuilder.MetricType): Unit = {
-    if (metricsSpec == null) return
-//    import scala.collection.JavaConversions._
-    for (spec <- metricsSpec.asScala) {
-      metricCache.put(spec.getName, MetricBuilder.build(metricMode, metricType, spec.getName, spec.getUnit, spec.getDimensions))
-    }
-  }
-
   def addAutoDetectMetricBackend(parsedMetric: Metric) = {
     // The Hostname dimension is included by default for backend metrics
     val dimensionNames = parsedMetric.getDimensionNames
-    dimensionNames.add("Hostname")
-    val metric = MetricBuilder.build(ConfigManager.getInstance.getMetricsMode, MetricBuilder.MetricType.valueOf(parsedMetric.getType), parsedMetric.getMetricName, parsedMetric.getUnit, dimensionNames)
+    dimensionNames.append("Hostname")
+    val metric = MetricBuilder.build(ConfigManager.getInstance.getMetricsMode, MetricBuilder.MetricType.valueOf(parsedMetric.getType), parsedMetric.getMetricName, parsedMetric.getUnit, dimensionNames.toList)
     this.metricsBackend.putIfAbsent(parsedMetric.getMetricName, metric)
     metric
+  }
+
+  private def addMetrics(metricCache: ConcurrentMap[String, IMetric], metricsSpec: List[MetricSpecification], metricMode: MetricBuilder.MetricMode, metricType: MetricBuilder.MetricType): Unit = {
+    if (metricsSpec == null) return
+    //    import scala.collection.JavaConversions._
+    for (spec <- metricsSpec) {
+      metricCache.put(spec.getName, MetricBuilder.build(metricMode, metricType, spec.getName, spec.getUnit, spec.getDimensions))
+    }
   }
 
   def getMetricFrontend(metricName: String) = metricsFrontend.get(metricName)

@@ -1,25 +1,24 @@
 package org.pytorch.serve.util.messages
 
-import java.io.File
-import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
-import java.util
-import java.util.regex.Pattern
 import org.pytorch.serve.archive.model.Manifest
 import org.pytorch.serve.util.ConfigManager
 import org.pytorch.serve.wlm.Model
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import org.slf4j.{Logger, LoggerFactory}
+
+import java.io.{File, IOException}
+import java.nio.file.{Files, Path, Paths}
+import java.util
+import java.util.regex.Pattern
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 object EnvironmentUtils {
   private val logger = LoggerFactory.getLogger(classOf[EnvironmentUtils])
   private val configManager = ConfigManager.getInstance
 
   def getEnvString(cwd: String, modelPath: String, handler: String): Array[String] = {
-    val envList = new util.ArrayList[String]
+    val envList = new ListBuffer[String]
     val pythonPath = new StringBuilder
     val blackList = configManager.getBlacklistPattern
     if (handler != null && handler.contains(":")) {
@@ -28,8 +27,10 @@ object EnvironmentUtils {
       if (handlerFile.contains("/")) handlerFile = handlerFile.substring(0, handlerFile.lastIndexOf('/'))
       pythonPath.append(handlerFile).append(File.pathSeparatorChar)
     }
-    val environment = new util.HashMap[String, String](System.getenv)
-    environment.putAll(configManager.getBackendConfiguration)
+    val environment = new mutable.HashMap[String, String] //(System.getenv)
+    environment ++= System.getenv().asScala
+    //    environment.putAll(configManager.getBackendConfiguration)
+    environment.addAll(configManager.getBackendConfiguration)
     if (System.getenv("PYTHONPATH") != null) pythonPath.append(System.getenv("PYTHONPATH")).append(File.pathSeparatorChar)
     if (modelPath != null) {
       var modelPathCanonical = new File(modelPath)
@@ -44,11 +45,11 @@ object EnvironmentUtils {
     }
     if (!cwd.contains("site-packages") && !cwd.contains("dist-packages")) pythonPath.append(cwd)
     environment.put("PYTHONPATH", pythonPath.toString)
-//    import scala.collection.JavaConversions._
-    for (entry <- environment.entrySet.asScala) {
-      if (!blackList.matcher(entry.getKey).matches) envList.add(entry.getKey + '=' + entry.getValue)
+
+    for (entry <- environment.toList) {
+      if (!blackList.matcher(entry._1).matches) envList.append(entry._1 + '=' + entry._2)
     }
-    envList.toArray(new Array[String](0)) // NOPMD
+    envList.toArray() //new Array[String](0)) // NOPMD
   }
 
   def getPythonRunTime(model: Model): String = {
@@ -71,11 +72,12 @@ object EnvironmentUtils {
   }
 
   def getCppEnvString(libPath: String): Array[String] = {
-    val envList = new util.ArrayList[String]
+    val envList = new ListBuffer[String]
     val cppPath = new StringBuilder
     val blackList = configManager.getBlacklistPattern
-    val environment = new util.HashMap[String, String](System.getenv)
-    environment.putAll(configManager.getBackendConfiguration)
+    val environment = new mutable.HashMap[String, String]() //(System.getenv)
+    environment ++= System.getenv().asScala
+    environment.addAll(configManager.getBackendConfiguration)
     cppPath.append(libPath)
     val os = System.getProperty("os.name").toLowerCase
     if (os.indexOf("win") >= 0) {
@@ -90,11 +92,11 @@ object EnvironmentUtils {
       if (System.getenv("LD_LIBRARY_PATH") != null) cppPath.append(File.pathSeparatorChar).append(System.getenv("LD_LIBRARY_PATH"))
       environment.put("LD_LIBRARY_PATH", cppPath.toString)
     }
-//    import scala.collection.JavaConversions._
-    for (entry <- environment.entrySet.asScala) {
-      if (!blackList.matcher(entry.getKey).matches) envList.add(entry.getKey + '=' + entry.getValue)
+
+    for (entry <- environment.toList) {
+      if (!blackList.matcher(entry._1).matches) envList.append(entry._1 + '=' + entry._2)
     }
-    envList.toArray(new Array[String](0)) // NOPMD
+    envList.toArray() //new Array[String](0)) // NOPMD
   }
 }
 

@@ -1,51 +1,29 @@
 package org.pytorch.serve.http.api.rest
 
 import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.FullHttpRequest
-import io.netty.handler.codec.http.HttpHeaderValues
-import io.netty.handler.codec.http.HttpMethod
-import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.handler.codec.http.HttpUtil
-import io.netty.handler.codec.http.QueryStringDecoder
+import io.netty.handler.codec.http.*
 import io.netty.util.CharsetUtil
-import java.util
-import java.util.concurrent.ExecutionException
 import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.model.ModelException
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
+import org.pytorch.serve.archive.model.{ModelException, ModelNotFoundException, ModelVersionNotFoundException}
 import org.pytorch.serve.archive.workflow.WorkflowException
-import org.pytorch.serve.http.HttpRequestHandlerChain
-import org.pytorch.serve.http.InternalServerException
-import org.pytorch.serve.http.MethodNotAllowedException
-import org.pytorch.serve.http.RequestTimeoutException
-import org.pytorch.serve.http.ResourceNotFoundException
-import org.pytorch.serve.http.ServiceUnavailableException
-import org.pytorch.serve.http.StatusResponse
-import org.pytorch.serve.http.messages.DescribeModelResponse
-import org.pytorch.serve.http.messages.KFV1ModelReadyResponse
-import org.pytorch.serve.http.messages.ListModelsResponse
-import org.pytorch.serve.http.messages.RegisterModelRequest
+import org.pytorch.serve.http.*
+import org.pytorch.serve.http.messages.{DescribeModelResponse, KFV1ModelReadyResponse, ListModelsResponse, RegisterModelRequest}
 import org.pytorch.serve.job.RestJob
 import org.pytorch.serve.openapi.OpenApiUtils
 import org.pytorch.serve.servingsdk.ModelServerEndpoint
-import org.pytorch.serve.util.ApiUtils
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.JsonUtils
-import org.pytorch.serve.util.NettyUtils
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.util.messages.WorkerCommands
-import org.pytorch.serve.wlm.Model
-import org.pytorch.serve.wlm.ModelManager
-import org.pytorch.serve.wlm.WorkerInitializationException
-import org.pytorch.serve.wlm.WorkerThread
-import scala.jdk.CollectionConverters._
+import org.pytorch.serve.util.messages.{RequestInput, WorkerCommands}
+import org.pytorch.serve.util.{ApiUtils, ConfigManager, JsonUtils, NettyUtils}
+import org.pytorch.serve.wlm.{Model, ModelManager, WorkerInitializationException, WorkerThread}
+
+import java.util
+import java.util.concurrent.ExecutionException
+import scala.jdk.CollectionConverters.*
 /**
  * A class handling inbound HTTP requests to the workflow management API.
  * /** Creates a new {@code ManagementRequestHandler} instance. */
  * <p>This class
  */
-class ManagementRequestHandler(ep: util.Map[String, ModelServerEndpoint]) extends HttpRequestHandlerChain {
+class ManagementRequestHandler(ep: Map[String, ModelServerEndpoint]) extends HttpRequestHandlerChain {
   endpointMap = ep
 //  configManager = ConfigManager.getInstance
   private var configManager: ConfigManager = ConfigManager.getInstance
@@ -55,7 +33,7 @@ class ManagementRequestHandler(ep: util.Map[String, ModelServerEndpoint]) extend
   @throws[WorkflowException]
   @throws[WorkerInitializationException]
   override def handleRequest(ctx: ChannelHandlerContext, req: FullHttpRequest, decoder: QueryStringDecoder, segments: Array[String]): Unit = {
-    if (isManagementReq(segments)) if (endpointMap.getOrDefault(segments(1), null) != null) handleCustomEndpoint(ctx, req, segments, decoder)
+    if (isManagementReq(segments)) if (endpointMap.getOrElse(segments(1), null) != null) handleCustomEndpoint(ctx, req, segments, decoder)
     else {
       if (!("models" == segments(1))) throw new ResourceNotFoundException
       val method = req.method
@@ -95,7 +73,7 @@ class ManagementRequestHandler(ep: util.Map[String, ModelServerEndpoint]) extend
     else chain.handleRequest(ctx, req, decoder, segments)
   }
 
-  private def isManagementReq(segments: Array[String]) = segments.length == 0 || ((segments.length >= 2 && segments.length <= 4) && segments(1) == "models") || (segments.length == 5 && "set-default" == segments(4)) || endpointMap.containsKey(segments(1))
+  private def isManagementReq(segments: Array[String]) = segments.length == 0 || ((segments.length >= 2 && segments.length <= 4) && segments(1) == "models") || (segments.length == 5 && "set-default" == segments(4)) || endpointMap.contains(segments(1))
 
   private def isKFV1ManagementReq(segments: Array[String]) = segments.length == 4 && "v1" == segments(1) && "models" == segments(2)
 

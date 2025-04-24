@@ -1,16 +1,13 @@
 package org.pytorch.serve.util.logging
 
-import org.apache.logging.log4j.core.Layout
-import org.apache.logging.log4j.core.LogEvent
 import org.apache.logging.log4j.core.config.Node
-import org.apache.logging.log4j.core.config.plugins.Plugin
-
-import org.apache.logging.log4j.core.config.plugins.PluginFactory
+import org.apache.logging.log4j.core.config.plugins.{Plugin, PluginFactory}
 import org.apache.logging.log4j.core.layout.AbstractStringLayout
+import org.apache.logging.log4j.core.{Layout, LogEvent}
 import org.apache.logging.log4j.message.Message
-import org.pytorch.serve.metrics.Dimension
-import org.pytorch.serve.metrics.Metric
-import scala.jdk.CollectionConverters._
+import org.pytorch.serve.metrics.{Dimension, Metric}
+
+import scala.jdk.CollectionConverters.*
 
 @Plugin(name = "QLogLayout", category = Node.CATEGORY, elementType = Layout.ELEMENT_TYPE, printObject = true) object QLogLayout {
   @PluginFactory def createLayout = new QLogLayout
@@ -93,8 +90,8 @@ import scala.jdk.CollectionConverters._
         if (marketPlace != null && marketPlace.nonEmpty) stringBuilder.append("\nMarketplace=").append(programName).append(':').append(domain).append(':').append(marketPlace)
         stringBuilder.append("\nStartTime=").append(QLogLayout.getStringOrDefault(metric.getTimestamp, currentTimeInSec.toString))
         stringBuilder.append("\nProgram=").append(programName).append("\nMetrics=").append(metric.getMetricName).append('=').append(metric.getValue).append(' ').append(metric.getUnit)
-//        import scala.collection.JavaConversions._
-        for (dimension <- metric.getDimensions.asScala) {
+
+        for (dimension <- metric.getDimensions) {
           stringBuilder.append(' ').append(dimension.name).append('|').append(dimension.value).append(' ')
         }
         stringBuilder.append("\nEOE\n")

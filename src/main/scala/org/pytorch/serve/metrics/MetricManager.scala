@@ -1,10 +1,11 @@
 package org.pytorch.serve.metrics
 
-import java.util.Collections
-import java.util
-import java.util.concurrent.TimeUnit
 import org.pytorch.serve.util.ConfigManager
 import org.pytorch.serve.wlm.ModelManager
+
+import java.util
+import java.util.Collections
+import java.util.concurrent.TimeUnit
 
 object MetricManager {
   private val METRIC_MANAGER = new MetricManager
@@ -18,12 +19,12 @@ object MetricManager {
 }
 
 final class MetricManager private {
-  
-  private var metrics: util.List[Metric] =  Collections.emptyList
 
-  def getMetrics: util.List[Metric] = metrics
+  private var metrics: List[Metric] = List.empty //Collections.emptyList
 
-  def setMetrics(metrics: util.List[Metric]): Unit = {
+  def getMetrics: List[Metric] = metrics
+
+  def setMetrics(metrics: List[Metric]): Unit = {
     this.metrics = metrics
   }
 }

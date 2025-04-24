@@ -2,40 +2,9 @@ package org.pytorch.serve.util
 
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
-import io.netty.handler.ssl.SslContext
-import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.SelfSignedCertificate
-
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.lang.reflect.Field
-import java.lang.reflect.Type
-import java.net.InetAddress
-import java.net.UnknownHostException
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Paths
-import java.security.GeneralSecurityException
-import java.security.KeyException
-import java.security.KeyFactory
-import java.security.KeyStore
-import java.security.PrivateKey
-import java.security.cert.Certificate
-import java.security.cert.CertificateFactory
-import java.security.cert.X509Certificate
-import java.security.spec.InvalidKeySpecException
-import java.security.spec.PKCS8EncodedKeySpec
-import java.util
-import java.util.Base64
-import java.util.InvalidPropertiesFormatException
-import java.util.Properties
-import java.util.regex.Matcher
-import java.util.regex.Pattern
-import java.util.regex.PatternSyntaxException
-import org.apache.commons.cli.CommandLine
-import org.apache.commons.cli.Option
-import org.apache.commons.cli.Options
+import io.netty.handler.ssl.{SslContext, SslContextBuilder}
+import org.apache.commons.cli.{CommandLine, Option, Options}
 import org.apache.commons.io.IOUtils
 import org.pytorch.serve.archive.model.Manifest
 import org.pytorch.serve.device.SystemInfo
@@ -43,9 +12,21 @@ import org.pytorch.serve.metrics.MetricBuilder
 import org.pytorch.serve.servingsdk.snapshot.SnapshotSerializer
 import org.pytorch.serve.snapshot.SnapshotSerializerFactory
 import org.pytorch.serve.util.ConnectorType.{MANAGEMENT_CONNECTOR, METRICS_CONNECTOR}
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import org.slf4j.{Logger, LoggerFactory}
 
+import java.io.{File, IOException, InputStream}
+import java.lang.reflect.{Field, Type}
+import java.net.{InetAddress, UnknownHostException}
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Paths}
+import java.security.*
+import java.security.cert.{Certificate, CertificateFactory, X509Certificate}
+import java.security.spec.{InvalidKeySpecException, PKCS8EncodedKeySpec}
+import java.util
+import java.util.regex.{Matcher, Pattern, PatternSyntaxException}
+import java.util.{Base64, InvalidPropertiesFormatException, Properties}
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 import scala.util.control.Breaks.{break, breakable}
 object ConfigManager {
@@ -252,7 +233,7 @@ final class ConfigManager(args: ConfigManager.Arguments) {
   private var prop: Properties  = new Properties
   private var snapshotDisabled = false
   private var hostName: String = null
-  private var modelConfig = new util.HashMap[String, util.Map[String, JsonObject]]
+  private var modelConfig = new mutable.HashMap[String, Map[String, JsonObject]]
   private var torchrunLogDir: String = null
   private var telemetryEnabled = false
   private var headerKeySequenceId: String = null
@@ -718,7 +699,7 @@ final class ConfigManager(args: ConfigManager.Arguments) {
   }
 
   def getBackendConfiguration = {
-    val config = new util.HashMap[String, String]
+    val config = new mutable.HashMap[String, String]
     // Append properties used by backend worker here
     config.put("TS_DECODE_INPUT_REQUEST", prop.getProperty(ConfigManager.TS_DECODE_INPUT_REQUEST, "true"))
     config.put("TS_IPEX_ENABLE", prop.getProperty(ConfigManager.TS_IPEX_ENABLE, "false"))
@@ -726,9 +707,10 @@ final class ConfigManager(args: ConfigManager.Arguments) {
     config
   }
 
-  def getAllowedUrls: java.util.List[String] = {
+  def getAllowedUrls: List[String] = {
     val allowedURL: String = prop.getProperty(ConfigManager.TS_ALLOWED_URLS, ConfigManager.DEFAULT_TS_ALLOWED_URLS)
-    util.Arrays.asList(allowedURL.split(",")*)
+    //    util.Arrays.asList(allowedURL.split(",")*)
+    allowedURL.split(",").toList
   }
 
   def isSnapshotDisabled: Boolean = snapshotDisabled
@@ -789,17 +771,11 @@ final class ConfigManager(args: ConfigManager.Arguments) {
     prop.setProperty(ConfigManager.TS_INITIAL_DISTRIBUTION_PORT, String.valueOf(initialPort))
   }
 
-  private def setModelConfig(): Unit = {
-    val modelConfigStr = prop.getProperty(ConfigManager.MODEL_CONFIG, null)
-    val `type` = new TypeToken[util.Map[String, util.Map[String, JsonObject]]]() {}.getType
-    if (modelConfigStr != null) this.modelConfig = JsonUtils.GSON.fromJson(modelConfigStr, `type`)
-  }
-
   def getJsonIntValue(modelName: String, version: String, element: String, defaultVal: Int): Int = {
     var value = defaultVal
-    if (this.modelConfig.containsKey(modelName)) {
-      val versionModel = this.modelConfig.get(modelName)
-      val jsonObject = versionModel.getOrDefault(version, null)
+    if (this.modelConfig.contains(modelName)) {
+      val versionModel = this.modelConfig.get(modelName).get
+      val jsonObject: JsonObject = versionModel.getOrElse(version, null)
       if (jsonObject != null && jsonObject.get(element) != null) try {
         value = jsonObject.get(element).getAsInt
         if (value <= 0) value = defaultVal
@@ -814,9 +790,9 @@ final class ConfigManager(args: ConfigManager.Arguments) {
 
   def getJsonRuntimeTypeValue(modelName: String, version: String, element: String, defaultVal: Manifest.RuntimeType): Manifest.RuntimeType = {
     var value = defaultVal
-    if (this.modelConfig.containsKey(modelName)) {
-      val versionModel = this.modelConfig.get(modelName)
-      val jsonObject = versionModel.getOrDefault(version, null)
+    if (this.modelConfig.contains(modelName)) {
+      val versionModel = this.modelConfig.get(modelName).get
+      val jsonObject: JsonObject = versionModel.getOrElse(version, null)
       if (jsonObject != null && jsonObject.get(element) != null) try value = Manifest.RuntimeType.valueOf(jsonObject.get(element).getAsString)
       catch {
         case e@(_: ClassCastException | _: IllegalStateException | _: IllegalArgumentException) =>
@@ -825,6 +801,12 @@ final class ConfigManager(args: ConfigManager.Arguments) {
       }
     }
     value
+  }
+
+  private def setModelConfig(): Unit = {
+    val modelConfigStr = prop.getProperty(ConfigManager.MODEL_CONFIG, null)
+    val `type` = new TypeToken[Map[String, Map[String, JsonObject]]]() {}.getType
+    if (modelConfigStr != null) this.modelConfig = JsonUtils.GSON.fromJson(modelConfigStr, `type`)
   }
 
   def getVersion = prop.getProperty(ConfigManager.VERSION)

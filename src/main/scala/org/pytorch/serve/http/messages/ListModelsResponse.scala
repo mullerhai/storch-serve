@@ -1,6 +1,7 @@
 package org.pytorch.serve.http.messages
 
 import java.util
+import scala.collection.mutable.ListBuffer
 
 object ListModelsResponse {
   final class ModelItem {
@@ -28,9 +29,9 @@ object ListModelsResponse {
 }
 
 class ListModelsResponse {
-  models = new util.ArrayList[ListModelsResponse.ModelItem]
+  models = new ListBuffer[ListModelsResponse.ModelItem]
   private var nextPageToken: String = null
-  private var models: util.List[ListModelsResponse.ModelItem] = null
+  private var models: ListBuffer[ListModelsResponse.ModelItem] = null
 
   def getNextPageToken: String = nextPageToken
 
@@ -38,13 +39,13 @@ class ListModelsResponse {
     this.nextPageToken = nextPageToken
   }
 
-  def getModels: util.List[ListModelsResponse.ModelItem] = models
+  def getModels: List[ListModelsResponse.ModelItem] = models.toList
 
-  def setModels(models: util.List[ListModelsResponse.ModelItem]): Unit = {
-    this.models = models
+  def setModels(models: List[ListModelsResponse.ModelItem]): Unit = {
+    this.models.appendAll(models)
   }
 
   def addModel(modelName: String, modelUrl: String): Unit = {
-    models.add(new ListModelsResponse.ModelItem(modelName, modelUrl))
+    models.append(new ListModelsResponse.ModelItem(modelName, modelUrl))
   }
 }

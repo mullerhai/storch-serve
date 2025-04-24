@@ -1,33 +1,25 @@
 package org.pytorch.serve.wlm
 
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
-
-import java.io.File
-import java.util.Collections
-import java.util
-import java.util.Objects
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentMap
-import java.util.concurrent.LinkedBlockingDeque
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.locks.ReentrantLock
-import org.pytorch.serve.archive.model.Manifest
-import org.pytorch.serve.archive.model.ModelArchive
-import org.pytorch.serve.archive.model.ModelConfig
-import org.pytorch.serve.archive.model.ModelConfig.ParallelType.{NONE,PP,TP,PPTP}
+import com.google.gson.{JsonElement, JsonObject}
+import org.pytorch.serve.archive.model.ModelConfig.ParallelType.{NONE, PP, PPTP, TP}
+import org.pytorch.serve.archive.model.{Manifest, ModelArchive, ModelConfig}
 import org.pytorch.serve.archive.utils.ArchiveUtils
-import org.pytorch.serve.job.Job
-import org.pytorch.serve.job.JobGroup
+import org.pytorch.serve.job.{Job, JobGroup}
 import org.pytorch.serve.util.ConfigManager
 import org.pytorch.serve.util.messages.WorkerCommands
 import org.pytorch.serve.wlm.ModelVersionName
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import org.pytorch.serve.util.ConfigManager
-import scala.util.control.Breaks.{break, breakable}
+import org.slf4j.{Logger, LoggerFactory}
+
+import java.io.File
+import java.util
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, LinkedBlockingDeque, TimeUnit}
+import java.util.{Collections, Objects}
+import scala.collection.mutable
+import scala.collection.mutable.{ListBuffer, TreeMap, Map as MutableMap}
 import scala.jdk.CollectionConverters.*
+import scala.util.control.Breaks.{break, breakable}
 
 object Model {
   val DEFAULT_DATA_QUEUE = "DATA_QUEUE"
@@ -58,7 +50,7 @@ class Model( var modelArchive: ModelArchive,var queueSize: Int) {
   private var parallelType = ModelConfig.ParallelType.NONE
   private var deviceType = if (ConfigManager.getInstance.getNumberOfGpu > 0) ModelConfig.DeviceType.GPU
   else ModelConfig.DeviceType.CPU
-  private var deviceIds: util.List[Integer] = null
+  private var deviceIds: ListBuffer[Int] = ListBuffer[Int]()
   private var numCores = 0
   private var lock: ReentrantLock = null
   private var jobGroupLock: ReentrantLock = null
@@ -96,12 +88,12 @@ class Model( var modelArchive: ModelArchive,var queueSize: Int) {
     }
     if (modelArchive.getModelConfig.getDeviceType ne ModelConfig.DeviceType.NONE) deviceType = if ((modelArchive.getModelConfig.getDeviceType eq ModelConfig.DeviceType.GPU) && ConfigManager.getInstance.getNumberOfGpu > 0) ModelConfig.DeviceType.GPU
     else ModelConfig.DeviceType.CPU
-    deviceIds = modelArchive.getModelConfig.getDeviceIds
+    deviceIds.:++(modelArchive.getModelConfig.getDeviceIds)
     if (deviceIds != null && deviceIds.size > 0) {
       hasCfgDeviceIds = true
 //      import scala.collection.JavaConversions._
       breakable(
-        for (deviceId <- deviceIds.asScala) {
+        for (deviceId <- deviceIds) {
           if (deviceId < 0 || deviceId >= ConfigManager.getInstance.getNumberOfGpu) {
             Model.logger.warn("Invalid deviceId:{}, ignore deviceIds list", deviceId)
             deviceIds = null
@@ -280,14 +272,14 @@ class Model( var modelArchive: ModelArchive,var queueSize: Int) {
   }
 
   @throws[InterruptedException]
-  def pollMgmtJob(threadId: String, waitTime: Long, jobsRepo: util.Map[String, Job]): Boolean = {
+  def pollMgmtJob(threadId: String, waitTime: Long, jobsRepo: mutable.Map[String, Job]): Boolean = {
     if (jobsRepo == null || threadId == null || threadId.isEmpty) throw new IllegalArgumentException("Invalid input given provided")
     if (!jobsRepo.isEmpty) throw new IllegalArgumentException("The jobs repo provided contains stale jobs. Clear them!!")
     val jobsQueue = jobsDb.get(threadId)
     if (jobsQueue != null && !jobsQueue.isEmpty) {
       val j = jobsQueue.poll(waitTime, TimeUnit.MILLISECONDS)
       if (j != null) {
-        jobsRepo.put(j.getJobId, j)
+        jobsRepo.+=(j.getJobId -> j)
         return true
       }
     }
@@ -295,7 +287,18 @@ class Model( var modelArchive: ModelArchive,var queueSize: Int) {
   }
 
   @throws[InterruptedException]
-  def pollInferJob(jobsRepo: util.Map[String, Job], batchSizez: Int, jobsQueue: LinkedBlockingDeque[Job]): Unit = {
+  def pollInferJob(jobsRepo: mutable.Map[String, Job], batchSize: Int): Unit = {
+    var jobsQueue: LinkedBlockingDeque[Job] = null
+    try {
+      if (isUseJobTicket) incNumJobTickets
+      lock.lockInterruptibly()
+      jobsQueue = jobsDb.get(Model.DEFAULT_DATA_QUEUE)
+      pollInferJob(jobsRepo, batchSize, jobsQueue)
+    } finally if (lock.isHeldByCurrentThread) lock.unlock()
+  }
+
+  @throws[InterruptedException]
+  def pollInferJob(jobsRepo: mutable.Map[String, Job], batchSizez: Int, jobsQueue: LinkedBlockingDeque[Job]): Unit = {
     var batchSize = batchSizez
     val pollNoWait = if (jobsRepo.isEmpty) false
     else true
@@ -304,10 +307,10 @@ class Model( var modelArchive: ModelArchive,var queueSize: Int) {
     if (jobsRepo.isEmpty) {
       j = jobsQueue.poll(Long.MaxValue, TimeUnit.MILLISECONDS)
       Model.logger.trace("get first job: {}", Objects.requireNonNull(j).getJobId)
-      jobsRepo.put(j.getJobId, j)
+      jobsRepo.+=(j.getJobId -> j)
       // batch size always is 1 for describe request job
       if (j.getCmd eq WorkerCommands.DESCRIBE) if (jobsRepo.isEmpty) {
-        jobsRepo.put(j.getJobId, j)
+        jobsRepo.+=(j.getJobId -> j)
         return
       }
       else {
@@ -331,7 +334,7 @@ class Model( var modelArchive: ModelArchive,var queueSize: Int) {
         }
         maxDelay -= (end - begin)
         begin = end
-        if (j.getPayload.getClientExpireTS > System.currentTimeMillis) jobsRepo.put(j.getJobId, j)
+        if (j.getPayload.getClientExpireTS > System.currentTimeMillis) then jobsRepo.+=(j.getJobId -> j)
         else Model.logger.warn("Drop inference request {} due to client timeout", j.getPayload.getRequestId)
         if (maxDelay <= 0) break //todo: break is not supported
       }
@@ -341,18 +344,7 @@ class Model( var modelArchive: ModelArchive,var queueSize: Int) {
   }
 
   @throws[InterruptedException]
-  def pollInferJob(jobsRepo: util.Map[String, Job], batchSize: Int): Unit = {
-    var jobsQueue: LinkedBlockingDeque[Job] = null
-    try {
-      if (isUseJobTicket) incNumJobTickets
-      lock.lockInterruptibly()
-      jobsQueue = jobsDb.get(Model.DEFAULT_DATA_QUEUE)
-      pollInferJob(jobsRepo, batchSize, jobsQueue)
-    } finally if (lock.isHeldByCurrentThread) lock.unlock()
-  }
-
-  @throws[InterruptedException]
-  def pollBatch(threadId: String, waitTime: Long, jobsRepo: util.Map[String, Job]): Unit = {
+  def pollBatch(threadId: String, waitTime: Long, jobsRepo: mutable.Map[String, Job]): Unit = {
     if (jobsRepo == null || threadId == null || threadId.isEmpty) throw new IllegalArgumentException("Invalid input given provided")
     if (!jobsRepo.isEmpty) throw new IllegalArgumentException("The jobs repo provided contains stale jobs. Clear them!!")
     var jobsQueue = jobsDb.get(threadId)
@@ -429,10 +421,11 @@ class Model( var modelArchive: ModelArchive,var queueSize: Int) {
     this.startupTimeout = startupTimeout
   }
 
-  def getDeviceIds: util.List[Integer] = this.deviceIds
+  def getDeviceIds: List[Int] = this.deviceIds.toList
 
-  def setDeviceIds(deviceIds: util.List[Integer]): Unit = {
-    Collections.copy(this.deviceIds, deviceIds)
+  def setDeviceIds(deviceIds: List[Int]): Unit = {
+    this.deviceIds.addAll(deviceIds)
+    //    Collections.copy(this.deviceIds, deviceIds)
   }
 
   def getParallelLevel: Int = this.parallelLevel

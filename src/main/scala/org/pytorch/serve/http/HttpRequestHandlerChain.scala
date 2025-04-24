@@ -1,38 +1,28 @@
 package org.pytorch.serve.http
 
 import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.DefaultFullHttpResponse
-import io.netty.handler.codec.http.FullHttpRequest
-import io.netty.handler.codec.http.FullHttpResponse
-import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.handler.codec.http.HttpVersion
-import io.netty.handler.codec.http.QueryStringDecoder
+import io.netty.handler.codec.http.*
+import org.pytorch.serve.archive.DownloadArchiveException
+import org.pytorch.serve.archive.model.{ModelException, ModelNotFoundException}
+import org.pytorch.serve.archive.workflow.WorkflowException
+import org.pytorch.serve.servingsdk.impl.{ModelServerContext, ModelServerRequest, ModelServerResponse}
+import org.pytorch.serve.servingsdk.{ModelServerEndpoint, ModelServerEndpointException}
+import org.pytorch.serve.util.NettyUtils
+import org.pytorch.serve.wlm.{ModelManager, WorkerInitializationException}
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.io.IOException
 import java.util
-import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.model.ModelException
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.workflow.WorkflowException
-import org.pytorch.serve.servingsdk.ModelServerEndpoint
-import org.pytorch.serve.servingsdk.ModelServerEndpointException
-import org.pytorch.serve.servingsdk.impl.ModelServerContext
-import org.pytorch.serve.servingsdk.impl.ModelServerRequest
-import org.pytorch.serve.servingsdk.impl.ModelServerResponse
-import org.pytorch.serve.util.NettyUtils
-import org.pytorch.serve.wlm.ModelManager
-import org.pytorch.serve.wlm.WorkerInitializationException
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 
 object HttpRequestHandlerChain {
   private val logger = LoggerFactory.getLogger(classOf[HttpRequestHandler])
 }
 
 abstract class HttpRequestHandlerChain {
-  protected var endpointMap: util.Map[String, ModelServerEndpoint] = null
+  protected var endpointMap: Map[String, ModelServerEndpoint] = null
   protected var chain: HttpRequestHandlerChain = null
 
-  def this(map: util.Map[String, ModelServerEndpoint]) ={
+  def this(map: Map[String, ModelServerEndpoint]) = {
     this()
     endpointMap = map
   }
@@ -66,7 +56,7 @@ abstract class HttpRequestHandlerChain {
   }
 
   protected def handleCustomEndpoint(ctx: ChannelHandlerContext, req: FullHttpRequest, segments: Array[String], decoder: QueryStringDecoder): Unit = {
-    val endpoint = endpointMap.get(segments(1))
+    val endpoint = endpointMap.get(segments(1)).get
     val r:Runnable = () => {
       val start = System.currentTimeMillis
       val rsp = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, true)

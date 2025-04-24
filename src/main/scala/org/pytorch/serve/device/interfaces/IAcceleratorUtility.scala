@@ -1,14 +1,14 @@
 package org.pytorch.serve.device.interfaces
 
+import org.apache.commons.io.IOUtils
+import org.pytorch.serve.device.Accelerator
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util
 import java.util.stream.Collectors
-import org.apache.commons.io.IOUtils
-import org.pytorch.serve.device.Accelerator
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-
+import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 /**
@@ -38,9 +38,9 @@ object IAcceleratorUtility {
    *          <p>// Returns [] parseVisibleDevicesEnv("")
    *          <p>// Throws IllegalArgumentException parseVisibleDevicesEnv("0,1,a")
    */
-  def parseVisibleDevicesEnv(visibleDevices: String): util.LinkedHashSet[Integer] = {
+  def parseVisibleDevicesEnv(visibleDevices: String): mutable.LinkedHashSet[Integer] = {
     // return an empty set if null or an empty string is passed
-    if (visibleDevices == null || visibleDevices.isEmpty) return new util.LinkedHashSet[Integer]
+    if (visibleDevices == null || visibleDevices.isEmpty) return new mutable.LinkedHashSet[Integer]
     // Remove all spaces from the input
     val cleaned = visibleDevices.replaceAll("\\s", "")
     // Check if the cleaned string matches the pattern of integers separated by
@@ -51,7 +51,7 @@ object IAcceleratorUtility {
     allIntegers.addAll(cleaned.split(","))
 //    val allIntegers = util.Arrays.stream(cleaned.split(",")).map(Integer.parseInt).collect(Collectors.toList).asScala
     // use Sets to deduplicate integers
-    val uniqueIntegers = new util.LinkedHashSet[Integer]
+val uniqueIntegers = new mutable.LinkedHashSet[Integer]
     val duplicates = allIntegers.map(ele =>Integer.parseInt(ele)).filter(num =>{
       
       if(!uniqueIntegers.contains(num)){
@@ -143,13 +143,13 @@ trait IAcceleratorUtility {
    * @throws IllegalArgumentException If the SMI output is invalid or cannot be parsed.
    * @throws NullPointerException     If either {@code smiOutput} or {@code parsed_gpu_ids} is null.
    */
-  def smiOutputToUpdatedAccelerators(smiOutput: String, parsed_gpu_ids: util.LinkedHashSet[Integer]): util.ArrayList[Accelerator]
+  def smiOutputToUpdatedAccelerators(smiOutput: String, parsed_gpu_ids: mutable.LinkedHashSet[Integer]): List[Accelerator]
 
   /**
    * @param availableAcceleratorIds
    * @return
    */
-  def getAvailableAccelerators(availableAcceleratorIds: util.LinkedHashSet[Integer]): util.ArrayList[Accelerator]
+  def getAvailableAccelerators(availableAcceleratorIds: mutable.LinkedHashSet[Integer]): List[Accelerator]
 
   /**
    * Updates the utilization information for a list of accelerators.
@@ -179,7 +179,7 @@ trait IAcceleratorUtility {
    * @see #callSMI(String[])
    * @see #smiOutputToUpdatedAccelerators(String, LinkedHashSet)
    */
-  def getUpdatedAcceleratorsUtilization(accelerators: util.ArrayList[Accelerator]): util.ArrayList[Accelerator] = {
+  def getUpdatedAcceleratorsUtilization(accelerators: List[Accelerator]): List[Accelerator] = {
     if (accelerators == null || accelerators.isEmpty) {
       IAcceleratorUtility.logger.warn("No accelerators to update.")
       throw new IllegalArgumentException("`accelerators` cannot be null or empty when trying to update the accelerator stats")
@@ -187,8 +187,8 @@ trait IAcceleratorUtility {
     val smiCommand = getUtilizationSmiCommand
     if (smiCommand == null || smiCommand.length == 0) throw new IllegalArgumentException("`smiCommand` cannot be null or empty when trying to update accelerator stats")
     val smiOutput = IAcceleratorUtility.callSMI(smiCommand)
-    val acceleratorIds = new util.LinkedHashSet[Integer]
-    Seq(accelerators.asScala).flatten.map((accelerator:Accelerator) =>{
+    val acceleratorIds = new mutable.LinkedHashSet[Integer]
+    Seq(accelerators).flatten.map((accelerator: Accelerator) => {
       accelerator.id
     }).foreach(el =>acceleratorIds.add(el))
 //    val acceleratorIds = accelerators.stream().map((accelerator: Accelerator) => accelerator.id).collect(Collectors.toCollection(new util.LinkedHashSet))

@@ -1,17 +1,13 @@
 package org.pytorch.serve.util.codec
 
 import io.netty.buffer.ByteBuf
-import io.netty.channel.ChannelHandler
-import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.{ChannelHandler, ChannelHandlerContext}
 import io.netty.handler.codec.MessageToByteEncoder
+import org.pytorch.serve.util.messages.*
+
 import java.nio.charset.StandardCharsets
 import java.util
-import org.pytorch.serve.util.messages.BaseModelRequest
-import org.pytorch.serve.util.messages.InputParameter
-import org.pytorch.serve.util.messages.ModelInferenceRequest
-import org.pytorch.serve.util.messages.ModelLoadModelRequest
-import org.pytorch.serve.util.messages.RequestInput
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters.*
 @ChannelHandler.Sharable object ModelRequestEncoder {
   private def encodeField(field: CharSequence, out: ByteBuf): Unit = {
     if (field == null) {
@@ -55,8 +51,7 @@ import scala.jdk.CollectionConverters._
     else if (msg.isInstanceOf[ModelInferenceRequest]) {
       out.writeByte('I')
       val request = msg.asInstanceOf[ModelInferenceRequest]
-//      import scala.collection.JavaConversions._
-      for (input <- request.getRequestBatch.asScala) {
+      for (input <- request.getRequestBatch) {
         encodeRequest(input, out)
       }
       out.writeInt(-1) // End of List
@@ -67,18 +62,17 @@ import scala.jdk.CollectionConverters._
     val buf = req.getRequestId.getBytes(StandardCharsets.UTF_8)
     out.writeInt(buf.length)
     out.writeBytes(buf)
-//    import scala.collection.JavaConversions._
-    for (entry <- req.getHeaders.entrySet.asScala) {
-      ModelRequestEncoder.encodeField(entry.getKey, out)
-      ModelRequestEncoder.encodeField(entry.getValue, out)
+    for (entry <- req.getHeaders.toList) {
+      ModelRequestEncoder.encodeField(entry._1, out)
+      ModelRequestEncoder.encodeField(entry._2, out)
     }
     out.writeInt(-1) // End of List
     if (req.isCachedInBackend) {
       out.writeInt(-1) // End of List
       return
     }
-//    import scala.collection.JavaConversions._
-    for (input <- req.getParameters.asScala) {
+
+    for (input <- req.getParameters) {
       encodeParameter(input, out)
     }
     out.writeInt(-1) // End of List

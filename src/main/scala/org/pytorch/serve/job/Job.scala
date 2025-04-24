@@ -1,9 +1,9 @@
 package org.pytorch.serve.job
 
+import org.pytorch.serve.util.messages.WorkerCommands.*
+import org.pytorch.serve.util.messages.{RequestInput, WorkerCommands}
+
 import java.util
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.util.messages.WorkerCommands.{PREDICT, LOAD, UNLOAD, STATS, DESCRIBE, STREAMPREDICT, STREAMPREDICT2, OIPPREDICT}
-import org.pytorch.serve.util.messages.WorkerCommands
 abstract class Job(var modelName: String, var modelVersion: String, var cmd: WorkerCommands // Else its data msg or inf requests
                    , var input: RequestInput) {
 
@@ -39,7 +39,7 @@ abstract class Job(var modelName: String, var modelVersion: String, var cmd: Wor
 
   def getScheduled: Long = scheduled
 
-  def response(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: util.Map[String, String]): Unit
+  def response(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: Map[String, String]): Unit
 
   def sendError(status: Int, error: String): Unit
 

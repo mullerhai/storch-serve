@@ -3,15 +3,12 @@ package org.pytorch.serve.http
 import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.handler.ssl.OptionalSslHandler
-import io.netty.handler.ssl.SslContext
-import io.netty.handler.ssl.SslHandler
+import io.netty.handler.ssl.{OptionalSslHandler, SslContext, SslHandler}
+import org.pytorch.serve.util.{ConfigManager, ConnectorType, NettyUtils}
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.util
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.ConnectorType
-import org.pytorch.serve.util.NettyUtils
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import scala.jdk.CollectionConverters.*
 
 object ExtendedSSLHandler {
   private val logger = LoggerFactory.getLogger(classOf[ExtendedSSLHandler])

@@ -1,20 +1,16 @@
 package org.pytorch.serve.metrics
 
-import java.io.BufferedReader
-import java.io.File
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.OutputStream
-import java.nio.charset.StandardCharsets
-import java.util
 import org.apache.commons.io.IOUtils
 import org.pytorch.serve.util.ConfigManager
 import org.pytorch.serve.util.messages.EnvironmentUtils
-import org.pytorch.serve.wlm.ModelManager
-import org.pytorch.serve.wlm.WorkerThread
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import org.pytorch.serve.wlm.{ModelManager, WorkerThread}
+import org.slf4j.{Logger, LoggerFactory}
+
+import java.io.*
+import java.nio.charset.StandardCharsets
+import java.util
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 import scala.util.control.Breaks.{break, breakable}
 object MetricCollector {
   private val logger = LoggerFactory.getLogger(classOf[MetricCollector])
@@ -27,14 +23,15 @@ class MetricCollector( var configManager: ConfigManager) extends Runnable {
   override def run(): Unit = {
     try {
       // Collect System level Metrics
-      val args = new util.ArrayList[String]
-      args.add(configManager.getPythonExecutable)
+      val args = new ListBuffer[String]
+      args.append(configManager.getPythonExecutable)
       var systemMetricsCmd = configManager.getSystemMetricsCmd
       if (systemMetricsCmd.isEmpty) systemMetricsCmd = String.format("%s --gpu %s", "ts/metrics/metric_collector.py", String.valueOf(configManager.getNumberOfGpu))
-      args.addAll(util.Arrays.asList(systemMetricsCmd.split("\\s+")*))
+      args.addAll(util.Arrays.asList(systemMetricsCmd.split("\\s+") *).asScala)
       val workingDir = new File(configManager.getModelServerHome)
       val envp = EnvironmentUtils.getEnvString(workingDir.getAbsolutePath, null, null)
-      val p = Runtime.getRuntime.exec(args.toArray(new Array[String](0)), envp, workingDir) // NOPMD
+      //      val p = Runtime.getRuntime.exec(args.toArray(new Array[String](0)), envp, workingDir) // NOPMD
+      val p = Runtime.getRuntime.exec(args.toArray(), envp, workingDir) // NOPMD
       val modelManager = ModelManager.getInstance
       val workerMap = modelManager.getWorkers
       try {
@@ -55,8 +52,8 @@ class MetricCollector( var configManager: ConfigManager) extends Runnable {
       try {
         val reader = new BufferedReader(new InputStreamReader(p.getInputStream, StandardCharsets.UTF_8))
         try {
-          val metricsSystem = new util.ArrayList[Metric]
-          metricManager.setMetrics(metricsSystem)
+          val metricsSystem = new ListBuffer[Metric]
+          metricManager.setMetrics(metricsSystem.toList)
           var line: String = null
           breakable(
             while (reader.readLine!= null) {
@@ -68,13 +65,13 @@ class MetricCollector( var configManager: ConfigManager) extends Runnable {
                 if (this.metricCache.getMetricFrontend(metric.getMetricName) != null) try {
                   // Frontend metrics by default have the last dimension as Hostname
                   val dimensionValues = metric.getDimensionValues
-                  dimensionValues.add(metric.getHostName)
-                  this.metricCache.getMetricFrontend(metric.getMetricName).addOrUpdate(dimensionValues, metric.getValue.toDouble)
+                  dimensionValues.append(metric.getHostName)
+                  this.metricCache.getMetricFrontend(metric.getMetricName).addOrUpdate(dimensionValues.toList, metric.getValue.toDouble)
                 } catch {
                   case e: Exception =>
                     MetricCollector.logger.error("Failed to update frontend metric ", metric.getMetricName, ": ", e)
                 }
-                metricsSystem.add(metric)
+                metricsSystem.append(metric)
               }
             }
           )
@@ -89,7 +86,7 @@ class MetricCollector( var configManager: ConfigManager) extends Runnable {
             
             val pid = Integer.valueOf(tokens(0))
             val worker = workerMap.get(pid)
-            worker.setMemory(java.lang.Long.parseLong(tokens(1)))
+            if worker.isDefined then worker.get.setMemory(java.lang.Long.parseLong(tokens(1)))
           }
         } finally if (reader != null) reader.close()
       }
@@ -100,10 +97,9 @@ class MetricCollector( var configManager: ConfigManager) extends Runnable {
   }
 
   @throws[IOException]
-  private def writeWorkerPids(workerMap: util.Map[Integer, WorkerThread], os: OutputStream): Unit = {
+  private def writeWorkerPids(workerMap: Map[Integer, WorkerThread], os: OutputStream): Unit = {
     var first = true
-//    import scala.collection.JavaConversions._
-    for (pid <- workerMap.keySet.asScala) {
+    for (pid <- workerMap.keySet) {
       breakable(
         if (pid < 0) {
           MetricCollector.logger.warn("worker pid is not available yet.")

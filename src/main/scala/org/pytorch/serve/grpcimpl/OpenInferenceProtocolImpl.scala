@@ -2,18 +2,17 @@ package org.pytorch.serve.grpcimpl
 
 import com.google.gson.Gson
 import com.google.protobuf.ByteString
+import io.grpc.stub.{ServerCallStreamObserver, StreamObserver}
 import io.grpc.{BindableService, ServerServiceDefinition, Status}
-import io.grpc.stub.ServerCallStreamObserver
-import io.grpc.stub.StreamObserver
+import org.pytorch.serve.archive.model.{ModelNotFoundException, ModelVersionNotFoundException}
+import org.pytorch.serve.grpc.openinference.open_inference_grpc.GRPCInferenceServiceGrpc.GRPCInferenceService
+import org.pytorch.serve.grpc.openinference.open_inference_grpc.ServerMetadataRequest
 
 import java.nio.charset.StandardCharsets
 import java.util
-import java.util.Base64
-import java.util.UUID
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
-import org.pytorch.serve.grpc.openinference.open_inference_grpc.GRPCInferenceServiceGrpc.GRPCInferenceService
-import org.pytorch.serve.grpc.openinference.open_inference_grpc.ServerMetadataRequest
+import java.util.{Base64, UUID}
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 //import org.pytorch.serve.grpc.openinference.open_inference_grpc.GRPCInferenceServiceGrpc.GRPCInferenceServiceImplBase
 import org.pytorch.serve.grpc.openinference.open_inference_grpc.{ModelInferRequest, ModelInferResponse, ModelMetadataRequest, ModelMetadataResponse, ModelReadyRequest, ModelReadyResponse, ServerLiveRequest, ServerLiveResponse, ServerReadyRequest, ServerReadyResponse}
 //import org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpc.ModelInferRequest
@@ -29,32 +28,26 @@ import org.pytorch.serve.grpc.openinference.open_inference_grpc.{ModelInferReque
 //import org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpc.ServerReadyRequest
 //import org.pytorch.serve.grpc.openinference.open_inference_grpc.OpenInferenceGrpc.ServerReadyResponse
 import org.pytorch.serve.grpc.openinference.open_inference_grpc.GRPCInferenceServiceGrpc
-import org.pytorch.serve.http.BadRequestException
-import org.pytorch.serve.http.InternalServerException
-import org.pytorch.serve.job.GRPCJob
-import org.pytorch.serve.job.Job
+import org.pytorch.serve.http.{BadRequestException, InternalServerException}
+import org.pytorch.serve.job.{GRPCJob, Job}
 import org.pytorch.serve.util.ApiUtils
-import org.pytorch.serve.util.messages.InputParameter
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.util.messages.WorkerCommands
-import org.pytorch.serve.wlm.Model
-import org.pytorch.serve.wlm.ModelManager
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import org.pytorch.serve.util.messages.{InputParameter, RequestInput, WorkerCommands}
+import org.pytorch.serve.wlm.{Model, ModelManager}
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.jdk.CollectionConverters.*
 object OpenInferenceProtocolImpl {
   private val logger = LoggerFactory.getLogger(classOf[OpenInferenceProtocolImpl])
 
-  private def setInputContents(inferInputTensor: ModelInferRequest.InferInputTensor, inferInputMap: util.Map[String, AnyRef]): Unit = {
+  private def setInputContents(inferInputTensor: ModelInferRequest.InferInputTensor, inferInputMap: mutable.HashMap[String, AnyRef]): Unit = {
     inferInputTensor.datatype match {
       case "BYTES" =>
         val byteStrings = inferInputTensor.getContents.bytesContents //.getBytesContentsList
-        val base64Strings = new util.ArrayList[String]
+        val base64Strings = new ListBuffer[String]
        
         for (byteString <- byteStrings) {
           val base64String = Base64.getEncoder.encodeToString(byteString.toByteArray)
-          base64Strings.add(base64String)
+          base64Strings.append(base64String)
         }
         inferInputMap.put("data", base64Strings)
       case "FP32" =>
@@ -108,9 +101,40 @@ class OpenInferenceProtocolImpl extends GRPCInferenceService with BindableServic
     responseObserver.onCompleted()
   }
 
-  private def sendErrorResponse(responseObserver: StreamObserver[_], internal: Status, e: Exception, string: String): Unit = {
-    responseObserver.onError(internal.withDescription(e.getMessage).augmentDescription(if (string == null) e.getClass.getCanonicalName
-    else string).withCause(e).asRuntimeException)
+  def modelMetadata(request: ModelMetadataRequest, responseObserver: StreamObserver[ModelMetadataResponse]): Unit = {
+    responseObserver.asInstanceOf[ServerCallStreamObserver[ModelMetadataResponse]].setOnCancelHandler(() => {
+      OpenInferenceProtocolImpl.logger.warn("grpc client call already cancelled")
+      responseObserver.onError(io.grpc.Status.CANCELLED.withDescription("call already cancelled").asRuntimeException)
+    })
+    val modelName = request.name
+    var modelVersion = request.version
+    val modelManager = ModelManager.getInstance
+    val response = ModelMetadataResponse.defaultInstance //.newBuilder
+    val inputs = new ListBuffer[ModelMetadataResponse.TensorMetadata]
+    val outputs = new ListBuffer[ModelMetadataResponse.TensorMetadata]
+    val versions = new ListBuffer[String]
+    if (modelName == null || "" == modelName) {
+      val e = new BadRequestException("Parameter model_name is required.")
+      sendErrorResponse(responseObserver, Status.INTERNAL, e, "BadRequestException.()")
+      return
+    }
+    if (modelVersion == null || "" == modelVersion) modelVersion = null
+    try {
+      val model = modelManager.getModel(modelName, modelVersion)
+      if (model == null) throw new ModelNotFoundException("Model not found: " + modelName)
+      modelManager.getAllModelVersions(modelName).foreach((k, v) => versions.append(k))
+      //      modelManager.getAllModelVersions(modelName).foreach((entry: util.Map.Entry[String, Model]) => versions.append(entry.getKey))
+      response.withName(modelName)
+      response.addAllVersions(versions)
+      response.withPlatform("")
+      response.addAllInputs(inputs)
+      response.addAllOutputs(outputs)
+      responseObserver.onNext(response)
+      responseObserver.onCompleted()
+    } catch {
+      case e@(_: ModelVersionNotFoundException | _: ModelNotFoundException) =>
+        sendErrorResponse(responseObserver, Status.NOT_FOUND, e, null)
+    }
   }
 
   def modelReady(request: ModelReadyRequest, responseObserver: StreamObserver[ModelReadyResponse]): Unit = {
@@ -143,41 +167,6 @@ class OpenInferenceProtocolImpl extends GRPCInferenceService with BindableServic
     }
   }
 
-  def modelMetadata(request: ModelMetadataRequest, responseObserver: StreamObserver[ModelMetadataResponse]): Unit = {
-    responseObserver.asInstanceOf[ServerCallStreamObserver[ModelMetadataResponse]].setOnCancelHandler(() => {
-      OpenInferenceProtocolImpl.logger.warn("grpc client call already cancelled")
-      responseObserver.onError(io.grpc.Status.CANCELLED.withDescription("call already cancelled").asRuntimeException)
-    })
-    val modelName = request.name
-    var modelVersion = request.version
-    val modelManager = ModelManager.getInstance
-    val response = ModelMetadataResponse.defaultInstance //.newBuilder
-    val inputs = new util.ArrayList[ModelMetadataResponse.TensorMetadata]
-    val outputs = new util.ArrayList[ModelMetadataResponse.TensorMetadata]
-    val versions = new util.ArrayList[String]
-    if (modelName == null || "" == modelName) {
-      val e = new BadRequestException("Parameter model_name is required.")
-      sendErrorResponse(responseObserver, Status.INTERNAL, e, "BadRequestException.()")
-      return
-    }
-    if (modelVersion == null || "" == modelVersion) modelVersion = null
-    try {
-      val model = modelManager.getModel(modelName, modelVersion)
-      if (model == null) throw new ModelNotFoundException("Model not found: " + modelName)
-      modelManager.getAllModelVersions(modelName).forEach((entry: util.Map.Entry[String, Model]) => versions.add(entry.getKey))
-      response.withName(modelName)
-      response.addAllVersions(versions.asScala)
-      response.withPlatform("")
-      response.addAllInputs(inputs.asScala)
-      response.addAllOutputs(outputs.asScala)
-      responseObserver.onNext(response)
-      responseObserver.onCompleted()
-    } catch {
-      case e@(_: ModelVersionNotFoundException | _: ModelNotFoundException) =>
-        sendErrorResponse(responseObserver, Status.NOT_FOUND, e, null)
-    }
-  }
-
   def modelInfer(request: ModelInferRequest, responseObserver: StreamObserver[ModelInferResponse]): Unit = {
     responseObserver.asInstanceOf[ServerCallStreamObserver[ModelInferResponse]].setOnCancelHandler(() => {
       OpenInferenceProtocolImpl.logger.warn("grpc client call already cancelled")
@@ -187,21 +176,21 @@ class OpenInferenceProtocolImpl extends GRPCInferenceService with BindableServic
     var modelVersion = request.modelVersion
     val contentsType = "application/json"
     val gson = new Gson
-    val modelInferMap = new util.HashMap[String, AnyRef]
-    val inferInputs = new util.ArrayList[util.Map[String, AnyRef]]
+    val modelInferMap = new mutable.HashMap[String, AnyRef]
+    val inferInputs = new ListBuffer[Map[String, AnyRef]]
     val requestId = UUID.randomUUID.toString
     val inputData = new RequestInput(requestId)
     // creating modelInfer map that same as kserve v2 existing request input data
     modelInferMap.put("id", request.id)
     modelInferMap.put("model_name", request.modelName)
-  
+
     for (entry <- request.inputs) {
-      val inferInputMap = new util.HashMap[String, AnyRef]
+      val inferInputMap = new mutable.HashMap[String, AnyRef]
       inferInputMap.put("name", entry.name)
       inferInputMap.put("shape", entry.shape)
       inferInputMap.put("datatype", entry.datatype)
       OpenInferenceProtocolImpl.setInputContents(entry, inferInputMap)
-      inferInputs.add(inferInputMap)
+      inferInputs.append(inferInputMap.toMap)
     }
     modelInferMap.put("inputs", inferInputs)
     val jsonString = gson.toJson(modelInferMap)
@@ -225,6 +214,11 @@ class OpenInferenceProtocolImpl extends GRPCInferenceService with BindableServic
       case e@(_: ModelNotFoundException | _: ModelVersionNotFoundException) =>
         sendErrorResponse(responseObserver, Status.INTERNAL, e, null)
     }
+  }
+
+  private def sendErrorResponse(responseObserver: StreamObserver[?], internal: Status, e: Exception, string: String): Unit = {
+    responseObserver.onError(internal.withDescription(e.getMessage).augmentDescription(if (string == null) e.getClass.getCanonicalName
+    else string).withCause(e).asRuntimeException)
   }
 
   /** The ServerLive API indicates if the inference server is able to receive 

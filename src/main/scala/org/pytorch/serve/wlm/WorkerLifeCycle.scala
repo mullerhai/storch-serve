@@ -1,33 +1,27 @@
 package org.pytorch.serve.wlm
 
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
+import org.pytorch.serve.archive.model.Manifest.RuntimeType.LSP
+import org.pytorch.serve.archive.model.ModelConfig.ParallelType
+import org.pytorch.serve.archive.model.{Manifest, ModelConfig}
+
+import java.io.{File, IOException, InputStream}
 import java.nio.charset.StandardCharsets
 import java.util
 import java.util.Scanner
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.regex.Matcher
-import java.util.regex.Pattern
-import org.pytorch.serve.archive.model.Manifest.RuntimeType.LSP
-import org.pytorch.serve.archive.model.{Manifest, ModelConfig}
-import org.pytorch.serve.archive.model.ModelConfig.ParallelType
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.regex.{Matcher, Pattern}
+import scala.collection.mutable.ListBuffer
 //import org.pytorch.serve.ensemble.WorkflowManifest.RuntimeType
 //import org.pytorch.serve.ensemble.WorkflowManifest.RuntimeType.LSP
-import org.pytorch.serve.metrics.Metric
-import org.pytorch.serve.metrics.MetricCache
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.Connector
+import org.pytorch.serve.metrics.{Metric, MetricCache}
 import org.pytorch.serve.util.messages.EnvironmentUtils
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-
-import scala.util.control.Breaks.{break, breakable}
+import org.pytorch.serve.util.{ConfigManager, Connector}
 import org.pytorch.serve.wlm.Model
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.jdk.CollectionConverters.*
+import scala.util.control.Breaks.{break, breakable}
 
 object WorkerLifeCycle {
   private val logger = LoggerFactory.getLogger(classOf[WorkerLifeCycle])
@@ -79,8 +73,8 @@ object WorkerLifeCycle {
                 }
                 // Hostname is added as a dimension by default to backend metrics
                 val dimensionValues = parsedMetric.getDimensionValues
-                dimensionValues.add(parsedMetric.getHostName)
-                this.metricCache.getMetricBackend(parsedMetric.getMetricName).addOrUpdate(dimensionValues, parsedMetric.getRequestId, parsedMetric.getValue.toDouble)
+                dimensionValues.append(parsedMetric.getHostName)
+                this.metricCache.getMetricBackend(parsedMetric.getMetricName).addOrUpdate(dimensionValues.toList, parsedMetric.getRequestId, parsedMetric.getValue.toDouble)
               } catch {
                 case e: Exception =>
                   logger.error("Failed to update backend metric ", parsedMetric.getMetricName, ": ", e)
@@ -131,45 +125,6 @@ class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
 
   def getProcess: Process = process
 
-  def launcherArgsToList(launcherArgs: String): util.ArrayList[String] = {
-    val arrlist = new util.ArrayList[String]
-    arrlist.add("-m")
-    arrlist.add("torch.backends.xeon.run_cpu")
-    if (launcherArgs != null && launcherArgs.length > 1) {
-      val argarray = launcherArgs.split(" ")
-      for (i <- 0 until argarray.length) {
-        arrlist.add(argarray(i))
-      }
-    }
-    arrlist
-  }
-
-  @throws[WorkerInitializationException]
-  @throws[InterruptedException]
-  def isLauncherAvailable(launcherArgs: String): Boolean = {
-    var launcherAvailable = false
-    val cmd = new util.ArrayList[String]
-    cmd.add("python")
-    val args = launcherArgsToList(launcherArgs)
-    cmd.addAll(args)
-    cmd.add("--no_python")
-    // try launching dummy command to check launcher availability
-    val dummyCmd = "hostname"
-    cmd.add(dummyCmd)
-    var cmdList = new Array[String](cmd.size)
-    cmdList = cmd.toArray(cmdList)
-    WorkerLifeCycle.logger.debug("launcherAvailable cmdline: {}", cmd.toString)
-    try {
-      val processLauncher = Runtime.getRuntime.exec(cmdList)
-      val ret = processLauncher.waitFor
-      launcherAvailable = ret == 0
-    } catch {
-      case e@(_: IOException | _: InterruptedException) =>
-        throw new WorkerInitializationException("Failed to start launcher", e)
-    }
-    launcherAvailable
-  }
-
   @throws[WorkerInitializationException]
   @throws[InterruptedException]
   def startWorker(port: Int, deviceIds: String): Unit = {
@@ -196,18 +151,18 @@ class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
       case e: IOException =>
         throw new WorkerInitializationException("Failed get TS home directory", e)
     }
-    val argl = new util.ArrayList[String]
-    val envp = new util.ArrayList[String]
-    envp.addAll(util.Arrays.asList(EnvironmentUtils.getEnvString(workingDir.getAbsolutePath, modelPath.getAbsolutePath, model.getModelArchive.getManifest.getModel.getHandler)*))
+    val argl = new ListBuffer[String]
+    val envp = new ListBuffer[String]
+    envp.addAll(util.Arrays.asList(EnvironmentUtils.getEnvString(workingDir.getAbsolutePath, modelPath.getAbsolutePath, model.getModelArchive.getManifest.getModel.getHandler) *).asScala)
     if (model.getParallelLevel > 0) if (model.getParallelType ne ParallelType.CUSTOM) attachRunner(argl, envp, port, deviceIds)
     else {
       if (deviceIds != null) {
         val visibleDeviceEnvName = configManager.systemInfo.getVisibleDevicesEnvName
-        envp.add(visibleDeviceEnvName + "=" + deviceIds)
+        envp.append(visibleDeviceEnvName + "=" + deviceIds)
       }
-      argl.add(EnvironmentUtils.getPythonRunTime(model))
+      argl.append(EnvironmentUtils.getPythonRunTime(model))
     }
-    else if (model.getParallelLevel == 0) argl.add(EnvironmentUtils.getPythonRunTime(model))
+    else if (model.getParallelLevel == 0) argl.append(EnvironmentUtils.getPythonRunTime(model))
     if (configManager.isCPULauncherEnabled) {
       val launcherArgs = configManager.getCPULauncherArgs
       val launcherAvailable = isLauncherAvailable(launcherArgs)
@@ -216,28 +171,28 @@ class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
         argl.addAll(args)
         // multi-worker core pinning
         if (this.numWorker > 1) {
-          argl.add("--ninstances")
-          argl.add(String.valueOf(this.numWorker))
-          argl.add("--rank")
+          argl.append("--ninstances")
+          argl.append(String.valueOf(this.numWorker))
+          argl.append("--rank")
           // instance_idx is 0-indexed
-          argl.add(String.valueOf(this.currNumRunningWorkers))
+          argl.append(String.valueOf(this.currNumRunningWorkers))
         }
       }
       else WorkerLifeCycle.logger.warn("torch.backends.xeon.run_cpu is not available. Proceeding without worker core pinning. For better performance, please make sure torch.backends.xeon.run_cpu is available.")
     }
-    argl.add(new File(workingDir, "ts/model_service_worker.py").getAbsolutePath)
-    argl.add("--sock-type")
-    argl.add(connector.getSocketType)
-    argl.add(if (connector.isUds) "--sock-name" else "--port")
-    argl.add(connector.getSocketPath)
-    argl.add("--metrics-config")
-    argl.add(configManager.getMetricsConfigPath)
-    if (model.isAsyncCommunication) argl.add("--async")
+    argl.append(new File(workingDir, "ts/model_service_worker.py").getAbsolutePath)
+    argl.append("--sock-type")
+    argl.append(connector.getSocketType)
+    argl.append(if (connector.isUds) "--sock-name" else "--port")
+    argl.append(connector.getSocketPath)
+    argl.append("--metrics-config")
+    argl.append(configManager.getMetricsConfigPath)
+    if (model.isAsyncCommunication) argl.append("--async")
     try {
       latch = new CountDownLatch(if (model.getParallelLevel > 0 && (model.getParallelType ne ParallelType.CUSTOM)) model.getParallelLevel
       else 1)
-      val args = argl.toArray(new Array[String](argl.size))
-      val envs = envp.toArray(new Array[String](envp.size))
+      val args = argl.toArray() //new Array[String](argl.size))
+      val envs = envp.toArray() //new Array[String](envp.size))
       WorkerLifeCycle.logger.debug("Worker cmdline: {}", argl.toString)
       this.synchronized {
         process = Runtime.getRuntime.exec(args, envs, modelPath)
@@ -260,6 +215,75 @@ class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
 
   @throws[WorkerInitializationException]
   @throws[InterruptedException]
+  def isLauncherAvailable(launcherArgs: String): Boolean = {
+    var launcherAvailable = false
+    val cmd = new ListBuffer[String]
+    cmd.append("python")
+    val args = launcherArgsToList(launcherArgs)
+    cmd.addAll(args)
+    cmd.append("--no_python")
+    // try launching dummy command to check launcher availability
+    val dummyCmd = "hostname"
+    cmd.append(dummyCmd)
+    var cmdList = new Array[String](cmd.size)
+    cmdList = cmd.toArray() //cmdList)
+    WorkerLifeCycle.logger.debug("launcherAvailable cmdline: {}", cmd.toString)
+    try {
+      val processLauncher = Runtime.getRuntime.exec(cmdList)
+      val ret = processLauncher.waitFor
+      launcherAvailable = ret == 0
+    } catch {
+      case e@(_: IOException | _: InterruptedException) =>
+        throw new WorkerInitializationException("Failed to start launcher", e)
+    }
+    launcherAvailable
+  }
+
+  def launcherArgsToList(launcherArgs: String): List[String] = {
+    val arrlist = new ListBuffer[String]
+    arrlist.append("-m")
+    arrlist.append("torch.backends.xeon.run_cpu")
+    if (launcherArgs != null && launcherArgs.length > 1) {
+      val argarray = launcherArgs.split(" ")
+      for (i <- 0 until argarray.length) {
+        arrlist.append(argarray(i))
+      }
+    }
+    arrlist.toList
+  }
+
+  private def attachRunner(argl: ListBuffer[String], envp: ListBuffer[String], port: Int, deviceIds: String): Unit = {
+    envp.append("LOGLEVEL=INFO")
+    if (deviceIds != null) envp.append("CUDA_VISIBLE_DEVICES=" + deviceIds)
+    val torchRun = model.getModelArchive.getModelConfig.getTorchRun
+    envp.append(String.format("OMP_NUM_THREADS=%d", torchRun.getOmpNumberThreads))
+    argl.append("torchrun")
+    argl.append("--nnodes")
+    argl.append(String.valueOf(torchRun.getNnodes))
+    argl.append("--nproc-per-node")
+    argl.append(String.valueOf(torchRun.getNprocPerNode))
+    argl.append("--log-dir")
+    argl.append(ConfigManager.getInstance.getTorchRunLogDir)
+    argl.append("--rdzv-backend")
+    argl.append(torchRun.getRdzvBackend)
+    if (torchRun.getRdzvEndpoint != null) {
+      argl.append("--rdzv-endpoint")
+      argl.append(torchRun.getRdzvEndpoint)
+    }
+    argl.append("--rdzv-id")
+    argl.append(String.format("%s_%d", model.getModelName, port))
+    if (torchRun.getMasterAddr != null) {
+      argl.append("--master-addr")
+      argl.append(torchRun.getMasterAddr)
+      argl.append("--master-port")
+      argl.append(String.valueOf(torchRun.getMasterPort))
+    }
+    argl.append("--max-restarts")
+    argl.append(String.valueOf(1))
+  }
+
+  @throws[WorkerInitializationException]
+  @throws[InterruptedException]
   private def startWorkerCPP(port: Int, runtimeType: String, deviceIds: String): Unit = {
     val workingDir = new File(configManager.getModelServerHome)
     var modelPath: File = null
@@ -269,31 +293,31 @@ class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
       case e: IOException =>
         throw new WorkerInitializationException("Failed get TS home directory", e)
     }
-    val argl = new util.ArrayList[String]
+    val argl = new ListBuffer[String]
     val cppBackendBin = new File(workingDir, "ts/cpp/bin/model_worker_socket")
     val cppBackendLib = new File(workingDir, "ts/cpp/lib")
     if (!cppBackendBin.exists) throw new WorkerInitializationException("model_worker_socket not found")
     if (!cppBackendLib.exists) throw new WorkerInitializationException("model_worker cpp library not found")
-    argl.add(cppBackendBin.getAbsolutePath)
-    argl.add("--sock_type")
-    argl.add(connector.getSocketType)
-    argl.add(if (connector.isUds) "--sock_name"
+    argl.append(cppBackendBin.getAbsolutePath)
+    argl.append("--sock_type")
+    argl.append(connector.getSocketType)
+    argl.append(if (connector.isUds) "--sock_name"
     else "--port")
-    argl.add(connector.getSocketPath)
-    argl.add("--runtime_type")
-    argl.add(runtimeType)
-    argl.add("--model_dir")
-    argl.add(modelPath.getAbsolutePath)
+    argl.append(connector.getSocketPath)
+    argl.append("--runtime_type")
+    argl.append(runtimeType)
+    argl.append("--model_dir")
+    argl.append(modelPath.getAbsolutePath)
     if (ConfigManager.getInstance.getTsCppLogConfig != null) {
-      argl.add("--logger_config_path")
-      argl.add(ConfigManager.getInstance.getTsCppLogConfig)
+      argl.append("--logger_config_path")
+      argl.append(ConfigManager.getInstance.getTsCppLogConfig)
     }
-    argl.add("--metrics_config_path")
-    argl.add(configManager.getMetricsConfigPath)
+    argl.append("--metrics_config_path")
+    argl.append(configManager.getMetricsConfigPath)
     val envp = EnvironmentUtils.getCppEnvString(cppBackendLib.getAbsolutePath)
     try {
       latch = new CountDownLatch(1)
-      val args = argl.toArray(new Array[String](argl.size))
+      val args = argl.toArray() //new Array[String](argl.size))
       WorkerLifeCycle.logger.debug("Worker cmdline: {}", argl.toString)
       this.synchronized {
         process = Runtime.getRuntime.exec(args, envp, modelPath)
@@ -312,36 +336,6 @@ class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
       case e: IOException =>
         throw new WorkerInitializationException("Failed start worker process", e)
     } finally if (!success) exit()
-  }
-
-  private def attachRunner(argl: util.ArrayList[String], envp: util.List[String], port: Int, deviceIds: String): Unit = {
-    envp.add("LOGLEVEL=INFO")
-    if (deviceIds != null) envp.add("CUDA_VISIBLE_DEVICES=" + deviceIds)
-    val torchRun = model.getModelArchive.getModelConfig.getTorchRun
-    envp.add(String.format("OMP_NUM_THREADS=%d", torchRun.getOmpNumberThreads))
-    argl.add("torchrun")
-    argl.add("--nnodes")
-    argl.add(String.valueOf(torchRun.getNnodes))
-    argl.add("--nproc-per-node")
-    argl.add(String.valueOf(torchRun.getNprocPerNode))
-    argl.add("--log-dir")
-    argl.add(ConfigManager.getInstance.getTorchRunLogDir)
-    argl.add("--rdzv-backend")
-    argl.add(torchRun.getRdzvBackend)
-    if (torchRun.getRdzvEndpoint != null) {
-      argl.add("--rdzv-endpoint")
-      argl.add(torchRun.getRdzvEndpoint)
-    }
-    argl.add("--rdzv-id")
-    argl.add(String.format("%s_%d", model.getModelName, port))
-    if (torchRun.getMasterAddr != null) {
-      argl.add("--master-addr")
-      argl.add(torchRun.getMasterAddr)
-      argl.add("--master-port")
-      argl.add(String.valueOf(torchRun.getMasterPort))
-    }
-    argl.add("--max-restarts")
-    argl.add(String.valueOf(1))
   }
 
   def exit(): Unit = {

@@ -1,41 +1,24 @@
 package org.pytorch.serve.http.api.rest
 
 import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.FullHttpRequest
-import io.netty.handler.codec.http.HttpHeaderValues
-import io.netty.handler.codec.http.HttpMethod
-import io.netty.handler.codec.http.HttpUtil
-import io.netty.handler.codec.http.QueryStringDecoder
-import io.netty.handler.codec.http.multipart.DefaultHttpDataFactory
-import io.netty.handler.codec.http.multipart.HttpDataFactory
-import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder
+import io.netty.handler.codec.http.*
+import io.netty.handler.codec.http.multipart.{DefaultHttpDataFactory, HttpDataFactory, HttpPostRequestDecoder}
+import org.pytorch.serve.archive.DownloadArchiveException
+import org.pytorch.serve.archive.model.{ModelException, ModelNotFoundException, ModelVersionNotFoundException}
+import org.pytorch.serve.archive.workflow.WorkflowException
+import org.pytorch.serve.http.{BadRequestException, HttpRequestHandlerChain, ResourceNotFoundException, StatusResponse}
+import org.pytorch.serve.metrics.{IMetric, MetricCache}
+import org.pytorch.serve.openapi.OpenApiUtils
+import org.pytorch.serve.servingsdk.ModelServerEndpoint
+import org.pytorch.serve.util.messages.{InputParameter, RequestInput}
+import org.pytorch.serve.util.{ApiUtils, ConfigManager, NettyUtils}
+import org.pytorch.serve.wlm.{Model, ModelManager, WorkerInitializationException}
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.net.HttpURLConnection
 import java.util
 import java.util.UUID
-import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.model.ModelException
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
-import org.pytorch.serve.archive.workflow.WorkflowException
-import org.pytorch.serve.http.BadRequestException
-import org.pytorch.serve.http.HttpRequestHandlerChain
-import org.pytorch.serve.http.ResourceNotFoundException
-import org.pytorch.serve.http.StatusResponse
-import org.pytorch.serve.metrics.IMetric
-import org.pytorch.serve.metrics.MetricCache
-import org.pytorch.serve.openapi.OpenApiUtils
-import org.pytorch.serve.servingsdk.ModelServerEndpoint
-import org.pytorch.serve.util.ApiUtils
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.NettyUtils
-import org.pytorch.serve.util.messages.InputParameter
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.wlm.Model
-import org.pytorch.serve.wlm.ModelManager
-import org.pytorch.serve.wlm.WorkerInitializationException
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters.*
 /**
  * A class handling inbound HTTP requests to the inference API.
  *
@@ -82,7 +65,7 @@ object InferenceRequestHandler {
   }
 }
 
-class InferenceRequestHandler(ep: util.Map[String, ModelServerEndpoint])
+class InferenceRequestHandler(ep: Map[String, ModelServerEndpoint])
 
 /** Creates a new {@code InferenceRequestHandler} instance. */
   extends HttpRequestHandlerChain {
@@ -93,7 +76,7 @@ class InferenceRequestHandler(ep: util.Map[String, ModelServerEndpoint])
   @throws[WorkflowException]
   @throws[WorkerInitializationException]
   override def handleRequest(ctx: ChannelHandlerContext, req: FullHttpRequest, decoder: QueryStringDecoder, segments: Array[String]): Unit = {
-    if (isInferenceReq(segments)) if (endpointMap.getOrDefault(segments(1), null) != null) handleCustomEndpoint(ctx, req, segments, decoder)
+    if (isInferenceReq(segments)) if (endpointMap.getOrElse(segments(1), null) != null) handleCustomEndpoint(ctx, req, segments, decoder)
     else segments(1) match {
       case "ping" =>
         val r: Runnable= () => {
@@ -125,7 +108,7 @@ class InferenceRequestHandler(ep: util.Map[String, ModelServerEndpoint])
     else chain.handleRequest(ctx, req, decoder, segments)
   }
 
-  private def isInferenceReq(segments: Array[String]) = segments.length == 0 || (segments.length >= 2 && (segments(1) == "ping" || segments(1) == "predictions" || segments(1) == "explanations" || segments(1) == "api-description" || segments(1) == "invocations" || endpointMap.containsKey(segments(1)))) || (segments.length == 4 && segments(1) == "models") || (segments.length == 3 && segments(2) == "predict") || (segments.length == 4 && segments(3) == "predict")
+  private def isInferenceReq(segments: Array[String]) = segments.length == 0 || (segments.length >= 2 && (segments(1) == "ping" || segments(1) == "predictions" || segments(1) == "explanations" || segments(1) == "api-description" || segments(1) == "invocations" || endpointMap.contains(segments(1)))) || (segments.length == 4 && segments(1) == "models") || (segments.length == 3 && segments(2) == "predict") || (segments.length == 4 && segments(3) == "predict")
 
   private def isKFV1InferenceReq(segments: Array[String]) = segments.length == 4 && "v1" == segments(1) && "models" == segments(2) && (segments(3).contains(":predict") || segments(3).contains(":explain"))
 
@@ -228,8 +211,8 @@ class InferenceRequestHandler(ep: util.Map[String, ModelServerEndpoint])
     val inferenceRequestsTotalMetric = MetricCache.getInstance.getMetricFrontend("ts_inference_requests_total")
     if (inferenceRequestsTotalMetric != null) {
       val inferenceRequestsTotalMetricDimensionValues = util.Arrays.asList(modelName, if (modelVersion == null) "default"
-      else modelVersion, ConfigManager.getInstance.getHostName)
-      try inferenceRequestsTotalMetric.addOrUpdate(inferenceRequestsTotalMetricDimensionValues, 1)
+      else modelVersion, ConfigManager.getInstance.getHostName).asScala
+      try inferenceRequestsTotalMetric.addOrUpdate(inferenceRequestsTotalMetricDimensionValues.toList, 1)
       catch {
         case e: Exception =>
           InferenceRequestHandler.logger.error("Failed to update frontend metric ts_inference_requests_total: ", e)

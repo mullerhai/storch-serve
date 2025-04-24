@@ -1,16 +1,19 @@
 package org.pytorch.serve.device.utils
 
-import java.util
-import org.pytorch.serve.device.Accelerator
-import org.pytorch.serve.device.AcceleratorVendor
-import org.pytorch.serve.device.interfaces.IAcceleratorUtility
 import org.pytorch.serve.device.interfaces.IAcceleratorUtility.logger
-import org.pytorch.serve.device.interfaces.ICsvSmiParser
+import org.pytorch.serve.device.interfaces.{IAcceleratorUtility, ICsvSmiParser}
+import org.pytorch.serve.device.{Accelerator, AcceleratorVendor}
+
+import java.util
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 class XpuUtil extends IAcceleratorUtility with ICsvSmiParser {
   override def getGpuEnvVariableName = "XPU_VISIBLE_DEVICES"
 
-  override def getAvailableAccelerators(availableAcceleratorIds: util.LinkedHashSet[Integer]): util.ArrayList[Accelerator] = {
+  override final def smiOutputToUpdatedAccelerators(smiOutput: String, parsedGpuIds: mutable.LinkedHashSet[Integer]): List[Accelerator] = csvSmiOutputToAccelerators(smiOutput, parsedGpuIds, this.parseUtilizationOutput)
+
+  override def getAvailableAccelerators(availableAcceleratorIds: mutable.LinkedHashSet[Integer]): List[Accelerator] = {
     val smiCommand = Array("xpu-smi", "discovery", "--dump", // output as csv
       String.join(",", "1", // device Id
         "2", // Device name
@@ -22,8 +25,6 @@ class XpuUtil extends IAcceleratorUtility with ICsvSmiParser {
     val parsedAcceleratorIds = IAcceleratorUtility.parseVisibleDevicesEnv(requestedAccelerators)
     csvSmiOutputToAccelerators(smiOutput, parsedAcceleratorIds, this.parseDiscoveryOutput)
   }
-
-  override final def smiOutputToUpdatedAccelerators(smiOutput: String, parsedGpuIds: util.LinkedHashSet[Integer]): util.ArrayList[Accelerator] = csvSmiOutputToAccelerators(smiOutput, parsedGpuIds, this.parseUtilizationOutput)
 
   override def getUtilizationSmiCommand: Array[String] = {
     // https://intel.github.io/xpumanager/smi_user_guide.html#get-the-device-real-time-statistics

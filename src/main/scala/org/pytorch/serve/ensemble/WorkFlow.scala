@@ -1,17 +1,15 @@
 package org.pytorch.serve.ensemble
 
-import java.io.File
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.Reader
+import org.pytorch.serve.archive.workflow.{InvalidWorkflowException, WorkflowArchive}
+import org.yaml.snakeyaml.Yaml
+import org.yaml.snakeyaml.error.YAMLException
+
+import java.io.{File, IOException, InputStreamReader, Reader}
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util
-import org.pytorch.serve.archive.workflow.InvalidWorkflowException
-import org.pytorch.serve.archive.workflow.WorkflowArchive
-import org.yaml.snakeyaml.Yaml
-import org.yaml.snakeyaml.error.YAMLException
-import scala.jdk.CollectionConverters._
+import scala.collection.mutable
+import scala.jdk.CollectionConverters.*
 case class WorkflowModel(name: String, url: String, minWorkers: Int, maxWorkers: Int,  batchSize: Int, maxBatchDelay: Int, retryAttempts: Int, timeOutMs: Int, handler: String) 
 
 object WorkFlow {
@@ -22,7 +20,7 @@ object WorkFlow {
     try {
       val r = new InputStreamReader(Files.newInputStream(file.toPath), StandardCharsets.UTF_8)
       try {
-        @SuppressWarnings(Array("unchecked")) val loadedYaml = yaml.load(r).asInstanceOf[util.Map[String, AnyRef]]
+        @SuppressWarnings(Array("unchecked")) val loadedYaml = yaml.load(r).asInstanceOf[Map[String, AnyRef]]
         loadedYaml
       } catch {
         case e: YAMLException =>
@@ -36,7 +34,7 @@ object WorkFlow {
 @throws[InvalidDAGException]
 @throws[InvalidWorkflowException]
 class WorkFlow(var workflowArchive: WorkflowArchive) {
-  private var workflowSpec: util.Map[String, AnyRef] = null
+  val models = new mutable.HashMap[String, WorkflowModel]
   var minWorkers = 1
   var maxWorkers = 1
   private var batchSize = 1
@@ -47,65 +45,64 @@ class WorkFlow(var workflowArchive: WorkflowArchive) {
   val specFile = new File(this.workflowArchive.getWorkflowDir, this.workflowArchive.getManifest.getWorkflow.getSpecFile)
   val handlerFile = new File(this.workflowArchive.getWorkflowDir, this.workflowArchive.getManifest.getWorkflow.getHandler)
   val workFlowName: String = this.workflowArchive.getWorkflowName
-  val models = new util.HashMap[String, WorkflowModel]
-  @SuppressWarnings(Array("unchecked")) 
-  val spec: util.LinkedHashMap[String, AnyRef] = WorkFlow.readSpecFile(specFile).asInstanceOf[util.LinkedHashMap[String, AnyRef]]
-  this.workflowSpec = spec
-  @SuppressWarnings(Array("unchecked")) val modelsInfo: util.Map[String, AnyRef] = this.workflowSpec.get("models").asInstanceOf[util.Map[String, AnyRef]]
+  @SuppressWarnings(Array("unchecked"))
+  val spec: mutable.LinkedHashMap[String, AnyRef] = WorkFlow.readSpecFile(specFile).asInstanceOf[mutable.LinkedHashMap[String, AnyRef]]
+  @SuppressWarnings(Array("unchecked")) val modelsInfo: Map[String, AnyRef] = this.workflowSpec.get("models").asInstanceOf[Map[String, AnyRef]]
+  this.workflowSpec = spec.toMap
+  @SuppressWarnings(Array("unchecked"))
+  val dagInfo: Map[String, AnyRef] = this.workflowSpec.get("dag").asInstanceOf[Map[String, AnyRef]]
 
-//  import scala.collection.JavaConversions._
-
-  for (entry <- modelsInfo.entrySet.asScala) {
-    val keyName = entry.getKey
+  for (entry <- modelsInfo.toSeq) {
+    val keyName = entry._1
     keyName match {
       case "min-workers" =>
-        minWorkers = entry.getValue.asInstanceOf[Int]
+        minWorkers = entry._2.asInstanceOf[Int]
       case "max-workers" =>
-        maxWorkers = entry.getValue.asInstanceOf[Int]
+        maxWorkers = entry._2.asInstanceOf[Int]
       case "batch-size" =>
-        batchSize = entry.getValue.asInstanceOf[Int]
+        batchSize = entry._2.asInstanceOf[Int]
       case "max-batch-delay" =>
-        maxBatchDelay = entry.getValue.asInstanceOf[Int]
+        maxBatchDelay = entry._2.asInstanceOf[Int]
       case "retry-attempts" =>
-        retryAttempts = entry.getValue.asInstanceOf[Int]
+        retryAttempts = entry._2.asInstanceOf[Int]
       case "timeout-ms" =>
-        timeOutMs = entry.getValue.asInstanceOf[Int]
+        timeOutMs = entry._2.asInstanceOf[Int]
       case _ =>
         // entry.getValue().getClass() check object type.
         // assuming Map containing model info
-        @SuppressWarnings(Array("unchecked")) 
-        val model = entry.getValue.asInstanceOf[util.LinkedHashMap[String, AnyRef]]
+        @SuppressWarnings(Array("unchecked"))
+        val model = entry._2.asInstanceOf[mutable.LinkedHashMap[String, AnyRef]]
         val modelName = workFlowName + "__" + keyName
-        val wfm = WorkflowModel(modelName, model.get("url").asInstanceOf[String], model.getOrDefault("min-workers", minWorkers.toString).asInstanceOf[Int], model.getOrDefault("max-workers", maxWorkers.toString).asInstanceOf[Int], model.getOrDefault("batch-size", batchSize.toString).asInstanceOf[Int], model.getOrDefault("max-batch-delay", maxBatchDelay.toString).asInstanceOf[Int], model.getOrDefault("retry-attempts", retryAttempts.toString).asInstanceOf[Int], model.getOrDefault("timeout-ms", timeOutMs.toString).asInstanceOf[Int], null)
+        val wfm = WorkflowModel(modelName, model.get("url").asInstanceOf[String], model.getOrElse("min-workers", minWorkers.toString).asInstanceOf[Int], model.getOrElse("max-workers", maxWorkers.toString).asInstanceOf[Int], model.getOrElse("batch-size", batchSize.toString).asInstanceOf[Int], model.getOrElse("max-batch-delay", maxBatchDelay.toString).asInstanceOf[Int], model.getOrElse("retry-attempts", retryAttempts.toString).asInstanceOf[Int], model.getOrElse("timeout-ms", timeOutMs.toString).asInstanceOf[Int], null)
         models.put(modelName, wfm)
     }
   }
-  @SuppressWarnings(Array("unchecked")) 
-  val dagInfo: util.Map[String, AnyRef] = this.workflowSpec.get("dag").asInstanceOf[util.Map[String, AnyRef]]
+  private var workflowSpec: Map[String, AnyRef] = null
 
 //  import scala.collection.JavaConversions._
 
-  for (entry <- dagInfo.entrySet.asScala) {
-    val nodeName = entry.getKey
+  for (entry <- dagInfo.toSeq) {
+    val nodeName = entry._1
     val modelName = workFlowName + "__" + nodeName
     var wfm: WorkflowModel = null
-    if (!models.containsKey(modelName)) wfm = new WorkflowModel(modelName, null, 1, 1, 1, 0, retryAttempts, timeOutMs, handlerFile.getPath + ":" + nodeName)
-    else wfm = models.get(modelName)
+    if (!models.contains(modelName)) wfm = new WorkflowModel(modelName, null, 1, 1, 1, 0, retryAttempts, timeOutMs, handlerFile.getPath + ":" + nodeName)
+    else wfm = models.get(modelName).get
     val fromNode = new Node(nodeName, wfm)
     dag.addNode(fromNode)
-    @SuppressWarnings(Array("unchecked")) val values = entry.getValue.asInstanceOf[util.ArrayList[String]]
+    @SuppressWarnings(Array("unchecked"))
+    val values = entry._2.asInstanceOf[List[String]]
 //    import scala.collection.JavaConversions._
     import scala.util.control.Breaks.{break, breakable}
-    for (toNodeName <- values.asScala) {
+    for (toNodeName <- values) {
       breakable(
-        if (toNodeName == null || "" == toNodeName.strip)
+        if (toNodeName == null || "" == toNodeName.trim)
          break() // continue //todo: continue is not supported
       )
  
       val toModelName = workFlowName + "__" + toNodeName
       var toWfm: WorkflowModel = null
-      if (!models.containsKey(toModelName)) toWfm = new WorkflowModel(toModelName, null, 1, 1, 1, 0, retryAttempts, timeOutMs, handlerFile.getPath + ":" + toNodeName)
-      else toWfm = models.get(toModelName)
+      if (!models.contains(toModelName)) toWfm = new WorkflowModel(toModelName, null, 1, 1, 1, 0, retryAttempts, timeOutMs, handlerFile.getPath + ":" + toNodeName)
+      else toWfm = models.get(toModelName).get
       val toNode = new Node(toNodeName, toWfm)
       dag.addNode(toNode)
       dag.addEdge(fromNode, toNode)

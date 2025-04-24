@@ -1,11 +1,12 @@
 package org.pytorch.serve.metrics
 
 import com.google.gson.annotations.SerializedName
+
 import java.util
 import java.util.concurrent.TimeUnit
-import java.util.regex.Matcher
-import java.util.regex.Pattern
-import scala.jdk.CollectionConverters._
+import java.util.regex.{Matcher, Pattern}
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 object Metric {
   private val PATTERN = Pattern.compile("\\s*([\\w\\s]+)\\.([\\w\\s]+):([0-9\\-,.e]+)\\|#([^|]*)(\\|#type:([^|,]+))?\\|#hostname:([^,]+),([^,]+)(,(.*))?")
@@ -25,12 +26,12 @@ object Metric {
     metric.setRequestId(matcher.group(10))
     if (dimensions != null) {
       val dimension = dimensions.split(",")
-      val list = new util.ArrayList[Dimension](dimension.length)
+      val list = new ListBuffer[Dimension]() //dimension.length)
       for (dime <- dimension) {
         val pair = dime.split(":")
-        if (pair.length == 2) list.add(new Dimension(pair(0), pair(1)))
+        if (pair.length == 2) list.append(new Dimension(pair(0), pair(1)))
       }
-      metric.setDimensions(list)
+      metric.setDimensions(list.toList)
     }
     metric
   }
@@ -45,12 +46,12 @@ class Metric {
   private var unit:String = null
   @SerializedName("Type") 
   private var `type`:String = null
-  @SerializedName("Dimensions") 
-  private var dimensions: util.List[Dimension] = null
-  @SerializedName("DimensionNames") 
-  private var dimensionNames = new util.ArrayList[String]
-  @SerializedName("DimensionValues") 
-  private var dimensionValues = new util.ArrayList[String]
+  @SerializedName("Dimensions")
+  private var dimensions: ListBuffer[Dimension] = new ListBuffer[Dimension]()
+  @SerializedName("DimensionNames")
+  private var dimensionNames = new ListBuffer[String]
+  @SerializedName("DimensionValues")
+  private var dimensionValues = new ListBuffer[String]
   @SerializedName("Timestamp") 
   private var timestamp:String = null
   @SerializedName("RequestId") 
@@ -65,7 +66,7 @@ class Metric {
     this.unit = unit
     this.`type` = `type`
     this.hostName = hostName
-    this.setDimensions(util.Arrays.asList(dimensions*))
+    this.setDimensions(dimensions.toList)
     this.timestamp = String.valueOf(TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis))
   }
 
@@ -105,35 +106,27 @@ class Metric {
     this.`type` = `type`
   }
 
-  def getDimensions: util.List[Dimension] = dimensions
-
-  def getDimensionNames: util.List[String] = this.dimensionNames
-
-  def getDimensionValues: util.List[String] = this.dimensionValues
-
-  def setDimensions(dimensions: util.List[Dimension]): Unit = {
-    this.dimensions = dimensions
+  def setDimensions(dimensions: List[Dimension]): Unit = {
+    this.dimensions.appendAll(dimensions)
 //    this.dimensionNames = new util.ArrayList[String]
 //    this.dimensionValues = new util.ArrayList[String]
 //    import scala.collection.JavaConversions._
-    for (dimension <- dimensions.asScala) {
-      this.dimensionNames.add(dimension.name)
-      this.dimensionValues.add(dimension.value)
+    for (dimension <- dimensions) {
+      this.dimensionNames.append(dimension.name)
+      this.dimensionValues.append(dimension.value)
     }
   }
 
-  def getTimestamp: String = timestamp
+  def getDimensionNames: ListBuffer[String] = this.dimensionNames //.toList
 
-  def setTimestamp(timestamp: String): Unit = {
-    this.timestamp = timestamp
-  }
+  def getDimensionValues: ListBuffer[String] = this.dimensionValues
 
   override def toString: String = {
     val sb = new StringBuilder(128)
     sb.append(metricName).append('.').append(unit).append(':').append(getValue).append("|#")
     var first = true
 //    import scala.collection.JavaConversions._
-    for (dimension <- getDimensions.asScala) {
+    for (dimension <- getDimensions) {
       if (first) first = false
       else sb.append(',')
       sb.append(dimension.name).append(':').append(dimension.value)
@@ -142,5 +135,13 @@ class Metric {
     if (requestId != null) sb.append(",requestID:").append(requestId)
     sb.append(",timestamp:").append(timestamp)
     sb.toString
+  }
+
+  def getDimensions: List[Dimension] = dimensions.toList
+
+  def getTimestamp: String = timestamp
+
+  def setTimestamp(timestamp: String): Unit = {
+    this.timestamp = timestamp
   }
 }

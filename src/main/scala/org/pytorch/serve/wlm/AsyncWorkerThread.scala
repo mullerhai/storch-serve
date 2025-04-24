@@ -1,26 +1,18 @@
 package org.pytorch.serve.wlm
 
-import org.pytorch.serve.wlm.WorkerThread.{ENCODER, logger, loggerTelemetryMetrics}
 import io.netty.bootstrap.Bootstrap
-import io.netty.channel.{Channel, ChannelFuture, ChannelFutureListener, ChannelHandler, ChannelHandlerContext, ChannelInitializer, ChannelPipeline, EventLoopGroup, SimpleChannelInboundHandler}
+import io.netty.channel.*
+import org.pytorch.serve.job.{Job, RestJob}
+import org.pytorch.serve.util.codec.ModelResponseDecoder
+import org.pytorch.serve.util.messages.*
+import org.pytorch.serve.util.{ConfigManager, Connector}
+import org.pytorch.serve.wlm.WorkerThread.{ENCODER, logger, loggerTelemetryMetrics}
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.SocketAddress
+import java.net.{HttpURLConnection, SocketAddress}
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import org.pytorch.serve.job.Job
-import org.pytorch.serve.job.RestJob
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.Connector
-import org.pytorch.serve.util.codec.ModelResponseDecoder
-import org.pytorch.serve.util.messages.{BaseModelRequest, InputParameter, ModelWorkerResponse, RequestInput, WorkerCommands}
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.codec.ModelResponseDecoder
-
+import java.util.concurrent.{CountDownLatch, TimeUnit}
 import scala.jdk.CollectionConverters.*
 object AsyncWorkerThread {
   // protected ConcurrentHashMap requestsInBackend;
@@ -50,7 +42,7 @@ class AsyncWorkerThread(configManager: ConfigManager, backendEventGroup: EventLo
         val repeats = getRepeats(workerCmd)
         AsyncWorkerThread.logger.debug("Flushing req.cmd {} repeats {} to backend at: {}", workerCmd, repeats, wtStartTime)
         try {
-          backendChannel.get(0).writeAndFlush(req).sync
+          backendChannel(0).writeAndFlush(req).sync
           AsyncWorkerThread.logger.debug("Successfully flushed req")
           if (!loadingFinished) {
             latch = new CountDownLatch(1)
@@ -88,7 +80,7 @@ class AsyncWorkerThread(configManager: ConfigManager, backendEventGroup: EventLo
       // Runnable once this worker is finished. If currentThread keep holding the reference
       // of the thread, currentThread.interrupt() might kill next worker.
       for (i <- 0 until backendChannel.size) {
-        backendChannel.get(i).disconnect
+        backendChannel(i).disconnect
       }
       backendChannel.clear()
       currentThread.set(null)
@@ -130,14 +122,14 @@ class AsyncWorkerThread(configManager: ConfigManager, backendEventGroup: EventLo
       })
       val address = connector.getSocketAddress
       AsyncWorkerThread.logger.info("Connecting to: {}", address)
-      backendChannel.add(b.connect(address).sync.channel)
-      backendChannel.get(0).closeFuture.addListener((future: ChannelFuture) => {
+      backendChannel.append(b.connect(address).sync.channel)
+      backendChannel(0).closeFuture.addListener((future: ChannelFuture) => {
         latch.countDown()
         AsyncWorkerThread.logger.info("{} Worker disconnected. {}", getWorkerId, state)
         val thread = currentThread.getAndSet(null)
         if (thread != null) thread.interrupt()
       }.asInstanceOf[ChannelFutureListener])
-      backendChannel.get(0).newSucceededFuture.addListener((future: ChannelFuture) => {
+      backendChannel(0).newSucceededFuture.addListener((future: ChannelFuture) => {
 
         // TODO:
         // use gpu, batch size in load model command

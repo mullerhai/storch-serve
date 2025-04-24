@@ -1,22 +1,22 @@
 package org.pytorch.serve.archive.model
 
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.util
 import java.util.NoSuchElementException
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-
-import scala.util.control.Breaks.{break, breakable}
+import scala.collection.mutable.ListBuffer
 import scala.util.control.Breaks
+import scala.util.control.Breaks.{break, breakable}
 
 object ModelConfig {
   private val logger = LoggerFactory.getLogger(classOf[ModelConfig])
   val defaultStartupTimeout = 120 // unit: sec
   val defaultResponseTimeout = 120 // unit: sec
 
-  def build(yamlMap: util.Map[String, AnyRef]): ModelConfig = {
+  def build(yamlMap: Map[String, AnyRef]): ModelConfig = {
     val modelConfig = new ModelConfig
     breakable(
-      yamlMap.forEach((k: String, v: AnyRef) => {
+      yamlMap.foreach((k: String, v: AnyRef) => {
         k match {
           case "minWorkers" =>
             if (v.isInstanceOf[Integer]) modelConfig.setMinWorkers(v.asInstanceOf[Int])
@@ -46,11 +46,11 @@ object ModelConfig {
             if (v.isInstanceOf[Integer]) modelConfig.setParallelLevel(v.asInstanceOf[Int])
             else logger.warn("Invalid parallelLevel: {}, should be integer", v)
           case "deviceIds" =>
-            if (v.isInstanceOf[util.List[_]]) modelConfig.setDeviceIds(v.asInstanceOf[util.List[_]])
+            if (v.isInstanceOf[List[?]]) modelConfig.setDeviceIds(v.asInstanceOf[List[?]])
             else logger.warn("Invalid deviceIds: {}, should be list of integer", v)
           case "torchrun" =>
-            if (v.isInstanceOf[util.Map[_, _]]) {
-              modelConfig.torchRun = TorchRun.build(v.asInstanceOf[util.Map[_, _]])
+            if (v.isInstanceOf[Map[_, _]]) {
+              modelConfig.torchRun = TorchRun.build(v.asInstanceOf[Map[_, _]])
               modelConfig.setParallelLevel(modelConfig.torchRun.getNprocPerNode)
             }
             else logger.warn("Invalid torchrun: {}, should be Torchrun parameters", v)
@@ -158,9 +158,9 @@ object ModelConfig {
 //  }
 
   object TorchRun {
-    def build(torchRunMap: util.Map[_, _]): ModelConfig.TorchRun = {
+    def build(torchRunMap: Map[?, ?]): ModelConfig.TorchRun = {
       val torchRun = new ModelConfig.TorchRun
-      torchRunMap.forEach((k, v) => {
+      torchRunMap.foreach((k, v) => {
         k.asInstanceOf[String] match {
           case "nnodes" =>
             if (v.isInstanceOf[Integer]) torchRun.setNnodes(v.asInstanceOf[Integer])
@@ -317,7 +317,7 @@ class ModelConfig {
    * the user specified gpu device id, By default, TorchServe auto round-robin all available GPUs
    * to assign deviceIds to a worker of a model if deviceIds is not set.
    */
-  private var deviceIds: util.List[Integer] = null
+  private var deviceIds: ListBuffer[Integer] = null
   /** this variable is auto calculated based on torchrun nproc-per-node. */
   private var parallelLevel = 0
   /** the model parallel type can be tp, pp, pptp */
@@ -421,15 +421,15 @@ class ModelConfig {
     this.startupTimeout = startupTimeout
   }
 
-  def getDeviceIds: util.List[Integer] = deviceIds
+  def getDeviceIds: List[Integer] = deviceIds.toList
 
-  def setDeviceIds(deviceIds: util.List[_]): Unit = {
-    this.deviceIds = new util.ArrayList[Integer]
+  def setDeviceIds(deviceIds: List[?]): Unit = {
+    this.deviceIds = new ListBuffer[Integer]
     breakable(
       for (i <- 0 until deviceIds.size) {
-        if (deviceIds.get(i).isInstanceOf[Integer]) this.deviceIds.add(deviceIds.get(i).asInstanceOf[Int])
+        if (deviceIds(i).isInstanceOf[Integer]) this.deviceIds.append(deviceIds(i).asInstanceOf[Int])
         else {
-          ModelConfig.logger.warn("Invalid deviceIds:{},", deviceIds.get(i))
+          ModelConfig.logger.warn("Invalid deviceIds:{},", deviceIds(i))
           this.deviceIds = null
           break() //todo: break is not supported
         }

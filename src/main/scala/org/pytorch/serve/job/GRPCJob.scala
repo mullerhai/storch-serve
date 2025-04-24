@@ -1,22 +1,17 @@
 package org.pytorch.serve.job
 
-import com.google.gson.Gson
-import com.google.gson.JsonArray
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
-import com.google.protobuf.Any
-import com.google.protobuf.ByteString
+import com.google.gson.{Gson, JsonArray, JsonElement, JsonObject}
+import com.google.protobuf.{Any, ByteString}
 import com.google.rpc.ErrorInfo
 import io.grpc.Status
-import io.grpc.stub.ServerCallStreamObserver
-import io.grpc.stub.StreamObserver
+import io.grpc.stub.{ServerCallStreamObserver, StreamObserver}
+import org.pytorch.serve.archive.model.{ModelNotFoundException, ModelVersionNotFoundException}
+import org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor
+import org.pytorch.serve.grpc.openinference.open_inference_grpc.{InferTensorContents, ModelInferResponse}
 
 import java.util
 import java.util.concurrent.TimeUnit
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
-import org.pytorch.serve.grpc.openinference.open_inference_grpc.{InferTensorContents, ModelInferResponse}
-import org.pytorch.serve.grpc.openinference.open_inference_grpc.ModelInferResponse.InferOutputTensor
+import scala.collection.mutable.ListBuffer
 //import org.pytorch.serve.grpc.inference.PredictionResponse
 import org.pytorch.serve.grpc.inference.inference.PredictionResponse
 //import org.pytorch.serve.grpc.management.ManagementResponse
@@ -26,17 +21,11 @@ import org.pytorch.serve.grpc.management.management.ManagementResponse
 //import org.pytorch.serve.grpc.openinference.OpenInferenceGrpc.ModelInferResponse.InferOutputTensor
 import org.pytorch.serve.grpcimpl.ManagementImpl
 import org.pytorch.serve.http.messages.DescribeModelResponse
-import org.pytorch.serve.metrics.IMetric
-import org.pytorch.serve.metrics.MetricCache
-import org.pytorch.serve.util.ApiUtils
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.GRPCUtils
-import org.pytorch.serve.util.JsonUtils
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.util.messages.WorkerCommands
+import org.pytorch.serve.metrics.{IMetric, MetricCache}
 import org.pytorch.serve.util.messages.WorkerCommands.*
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import org.pytorch.serve.util.messages.{RequestInput, WorkerCommands}
+import org.pytorch.serve.util.{ApiUtils, ConfigManager, GRPCUtils, JsonUtils}
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.jdk.CollectionConverters.*
 object GRPCJob {
@@ -45,7 +34,7 @@ object GRPCJob {
 
 class GRPCJob(modelName:String, version:String, cmd:WorkerCommands, input:RequestInput) extends Job(modelName, version, cmd, input) {
   final private var queueTimeMetric: IMetric = null
-  final private var queueTimeMetricDimensionValues: util.List[String] = null
+  final private var queueTimeMetricDimensionValues: List[String] = null
   private var predictionResponseObserver: StreamObserver[PredictionResponse] = null
   private var managementResponseObserver: StreamObserver[ManagementResponse] = null
   private var modelInferResponseObserver: StreamObserver[ModelInferResponse] = null
@@ -54,21 +43,21 @@ class GRPCJob(modelName:String, version:String, cmd:WorkerCommands, input:Reques
     this(modelName, version, cmd, input)
     this.predictionResponseObserver = predictionResponseObserver
     this.queueTimeMetric = MetricCache.getInstance.getMetricFrontend("QueueTime")
-    this.queueTimeMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName)
+    this.queueTimeMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName).asScala.toList
   }
 
   def this(modelInferResponseObserver: StreamObserver[ModelInferResponse], modelName: String, version: String, input: RequestInput, cmd: WorkerCommands) ={
     this(modelName, version, cmd, input)
     this.modelInferResponseObserver = modelInferResponseObserver
     this.queueTimeMetric = MetricCache.getInstance.getMetricFrontend("QueueTime")
-    this.queueTimeMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName)
+    this.queueTimeMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName).asScala.toList
   }
 
   def this(managementResponseObserver: StreamObserver[ManagementResponse], modelName: String, version: String, input: RequestInput)= {
     this(modelName, version, WorkerCommands.DESCRIBE, input)
     this.managementResponseObserver = managementResponseObserver
     this.queueTimeMetric = MetricCache.getInstance.getMetricFrontend("QueueTime")
-    this.queueTimeMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName)
+    this.queueTimeMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName).asScala.toList
   }
 
   private def cancelHandler(responseObserver: ServerCallStreamObserver[PredictionResponse]): Boolean = {
@@ -89,7 +78,7 @@ class GRPCJob(modelName:String, version:String, cmd:WorkerCommands, input:Reques
     }
   }
 
-  override def response(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: util.Map[String, String]): Unit = {
+  override def response(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: Map[String, String]): Unit = {
     val output = ByteString.copyFrom(body)
     val cmd = this.getCmd
     cmd match {
@@ -105,16 +94,16 @@ class GRPCJob(modelName:String, version:String, cmd:WorkerCommands, input:Reques
         val reply = PredictionResponse.defaultInstance
         reply.withPrediction(output)//newBuilder.setPrediction(output).build
         responseObserver.onNext(reply)
-        if ((cmd eq WorkerCommands.PREDICT) || ((cmd eq WorkerCommands.STREAMPREDICT) && responseHeaders.get(RequestInput.TS_STREAM_NEXT) == "false")) {
+        if ((cmd eq WorkerCommands.PREDICT) || ((cmd eq WorkerCommands.STREAMPREDICT) && responseHeaders.get(RequestInput.TS_STREAM_NEXT).get == "false")) {
           if (cancelHandler(responseObserver)) return
           responseObserver.onCompleted()
           logQueueTime()
         }
-        else if ((cmd eq WorkerCommands.STREAMPREDICT2) && (responseHeaders.get(RequestInput.TS_STREAM_NEXT) == null || responseHeaders.get(RequestInput.TS_STREAM_NEXT) == "false")) logQueueTime()
+        else if ((cmd eq WorkerCommands.STREAMPREDICT2) && (responseHeaders.get(RequestInput.TS_STREAM_NEXT) == null || responseHeaders.get(RequestInput.TS_STREAM_NEXT).get == "false")) logQueueTime()
       case DESCRIBE =>
         try {
           val respList = ApiUtils.getModelDescription(this.getModelName, this.getModelVersion)
-          if (!output.isEmpty && respList != null && respList.size == 1) respList.get(0).setCustomizedMetadata(body)
+          if (!output.isEmpty && respList != null && respList.size == 1) respList(0).setCustomizedMetadata(body)
           val resp = JsonUtils.GSON_PRETTY.toJson(respList)
           val mgmtReply = ManagementResponse.of(resp) //newBuilder.setMsg(resp).build
           managementResponseObserver.onNext(mgmtReply)
@@ -200,13 +189,13 @@ class GRPCJob(modelName:String, version:String, cmd:WorkerCommands, input:Reques
 //        jsonData.forEach((data: JsonElement) => int32Contents.add(data.getAsInt.toLong.toInt))
         inferTensorContents.addAllIntContents(jsonData.asScala.map(data => data.getAsInt))
       case "INT64" => // int64Contents
-        val int64Contents = new util.ArrayList[Long]
-        jsonData.forEach((data: JsonElement) => int64Contents.add(data.getAsLong))
+        val int64Contents = new ListBuffer[Long]
+        jsonData.forEach((data: JsonElement) => int64Contents.append(data.getAsLong))
         inferTensorContents.addAllInt64Contents(jsonData.asScala.map(data => data.getAsLong))
       case "BYTES" => // bytesContents
-        val byteContents = new util.ArrayList[ByteString]
-        jsonData.forEach((data: JsonElement) => byteContents.add(ByteString.copyFromUtf8(data.toString)))
-        inferTensorContents.addAllBytesContents(byteContents.asScala)
+        val byteContents = new ListBuffer[ByteString]
+        jsonData.forEach((data: JsonElement) => byteContents.append(ByteString.copyFromUtf8(data.toString)))
+        inferTensorContents.addAllBytesContents(byteContents)
       case "BOOL" => // boolContents
 //        val boolContents = new util.ArrayList[Boolean]
 //        jsonData.forEach((data: JsonElement) => boolContents.add(data.getAsBoolean))

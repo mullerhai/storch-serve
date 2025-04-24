@@ -1,24 +1,25 @@
 package org.pytorch.serve.util.messages
 
 import java.util
-import scala.jdk.CollectionConverters._
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 class ModelInferenceRequest(modelName: String) extends BaseModelRequest(WorkerCommands.PREDICT, modelName) {
-  
-  private var batch: util.List[RequestInput] = new util.ArrayList[RequestInput]
 
-  def getRequestBatch: util.List[RequestInput] = batch
+  private var batch: ListBuffer[RequestInput] = new ListBuffer[RequestInput]
 
-  def setRequestBatch(requestBatch: util.List[RequestInput]): Unit = {
-    this.batch = requestBatch
+  def getRequestBatch: List[RequestInput] = batch.toList
+
+  def setRequestBatch(requestBatch: List[RequestInput]): Unit = {
+    this.batch.appendAll(requestBatch)
   }
 
   def addRequest(req: RequestInput): Unit = {
-    batch.add(req)
+    batch.append(req)
   }
 
   def setCachedInBackend(cached: Boolean): Unit = {
 //    import scala.collection.JavaConversions._
-    for (input <- batch.asScala) {
+    for (input <- batch) {
       input.setCachedInBackend(cached)
     }
   }

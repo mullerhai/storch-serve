@@ -2,9 +2,9 @@ package org.pytorch.serve.archive.model.s3
 
 import java.io.UnsupportedEncodingException
 import java.net.URL
-import java.util.Date
 import java.util
-
+import java.util.Date
+import scala.collection.mutable.{ListBuffer, TreeMap, Map as MutableMap}
 /**
  * Sample AWS4 signer demonstrating how to sign requests to Amazon S3 using an 'Authorization'
  * header.
@@ -24,8 +24,8 @@ class AWS4SignerForAuthorizationHeader(endpointUrl: URL, httpMethod: String, ser
    *         header 'Authorization' on the subsequent HTTP request.
    */
   @throws[UnsupportedEncodingException]
-  def computeSignature(headers: util.Map[String, String],
-                       queryParameters: util.Map[String, String], 
+  def computeSignature(headers: MutableMap[String, String],
+                       queryParameters: Map[String, String],
                        bodyHash: String, 
                        awsAccessKey: String, 
                        awsSecretKey: String): String = {

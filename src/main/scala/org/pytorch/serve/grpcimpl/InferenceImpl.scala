@@ -2,36 +2,23 @@ package org.pytorch.serve.grpcimpl
 
 import com.google.protobuf.{Any, ByteString, Empty, empty}
 import com.google.rpc.ErrorInfo
+import io.grpc.stub.{ServerCallStreamObserver, StreamObserver}
 import io.grpc.{BindableService, ServerServiceDefinition, Status}
-import io.grpc.stub.ServerCallStreamObserver
-import io.grpc.stub.StreamObserver
+import org.pytorch.serve.archive.model.{ModelNotFoundException, ModelVersionNotFoundException}
+import org.pytorch.serve.grpc.inference.inference.InferenceAPIsServiceGrpc.InferenceAPIsService
+import org.pytorch.serve.grpc.inference.inference.{InferenceAPIsServiceGrpc, PredictionResponse, PredictionsRequest, TorchServeHealthResponse}
+import org.pytorch.serve.http.{BadRequestException, InternalServerException, StatusResponse}
+import org.pytorch.serve.job.{GRPCJob, JobGroup}
+import org.pytorch.serve.metrics.MetricCache
+import org.pytorch.serve.util.messages.{InputParameter, RequestInput, WorkerCommands}
+import org.pytorch.serve.util.{ApiUtils, ConfigManager, JsonUtils}
+import org.pytorch.serve.wlm.ModelManager
+import org.slf4j.LoggerFactory
 
 import java.net.HttpURLConnection
 import java.util
 import java.util.UUID
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
-import org.pytorch.serve.grpc.inference.inference.InferenceAPIsServiceGrpc.InferenceAPIsService
-import org.pytorch.serve.grpc.inference.inference.{InferenceAPIsServiceGrpc, PredictionResponse, PredictionsRequest, TorchServeHealthResponse}
-import org.pytorch.serve.http.BadRequestException
-import org.pytorch.serve.http.InternalServerException
-import org.pytorch.serve.http.StatusResponse
-import org.pytorch.serve.job.GRPCJob
-import org.pytorch.serve.job.Job
-import org.pytorch.serve.job.JobGroup
-import org.pytorch.serve.metrics.IMetric
-import org.pytorch.serve.metrics.MetricCache
-import org.pytorch.serve.util.ApiUtils
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.JsonUtils
-import org.pytorch.serve.util.messages.InputParameter
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.util.messages.WorkerCommands
-import org.pytorch.serve.wlm.Model
-import org.pytorch.serve.wlm.ModelManager
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-
+import scala.jdk.CollectionConverters.*
 object InferenceImpl {
   private val logger = LoggerFactory.getLogger(classOf[InferenceImpl])
   private val strFalse = ByteString.copyFromUtf8("false")
@@ -152,7 +139,7 @@ class InferenceImpl extends InferenceAPIsService with BindableService {
       if (inferenceRequestsTotalMetric != null) {
         val inferenceRequestsTotalMetricDimensionValues = util.Arrays.asList(modelName, if (modelVersion == null) "default"
         else modelVersion, ConfigManager.getInstance.getHostName)
-        try inferenceRequestsTotalMetric.addOrUpdate(inferenceRequestsTotalMetricDimensionValues, 1)
+        try inferenceRequestsTotalMetric.addOrUpdate(inferenceRequestsTotalMetricDimensionValues.asScala.toList, 1)
         catch {
           case e: Exception =>
             InferenceImpl.logger.error("Failed to update frontend metric ts_inference_requests_total: ", e)

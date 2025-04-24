@@ -1,11 +1,13 @@
 package org.pytorch.serve.device.interfaces
 
+import org.pytorch.serve.device.Accelerator
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.util
 import java.util.function.Function
-import org.pytorch.serve.device.Accelerator
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 object ICsvSmiParser {
   val csvSmiParserLogger: Logger = LoggerFactory.getLogger(classOf[ICsvSmiParser])
 }
@@ -30,15 +32,15 @@ trait ICsvSmiParser {
    *                               from various SMI commands. This function should handle the specific logic for creating an
    *                               Accelerator object from a line of CSV data.
    */
-    def csvSmiOutputToAccelerators(csvOutput: String, parsedGpuIds: util.LinkedHashSet[Integer], parseFunction: Function[Array[String], Accelerator]): util.ArrayList[Accelerator] = {
-      val accelerators = new util.ArrayList[Accelerator]
+  def csvSmiOutputToAccelerators(csvOutput: String, parsedGpuIds: mutable.LinkedHashSet[Integer], parseFunction: Function[Array[String], Accelerator]): List[Accelerator] = {
+    val accelerators = new ListBuffer[Accelerator]
 //      val lines: Array[String] =util.Arrays.asList(csvOutput.split("\n")).asScala
       val addAll = parsedGpuIds.isEmpty
       csvOutput.lines().skip(1).forEach((line:String)=>{
         val parts = line.split(",")
         try {
           val accelerator = parseFunction.apply(parts)
-          if (accelerator != null && (addAll || parsedGpuIds.contains(accelerator.getAcceleratorId))) then accelerators.add(accelerator)
+          if (accelerator != null && (addAll || parsedGpuIds.contains(accelerator.getAcceleratorId))) then accelerators.append(accelerator)
         } catch {
           case e: NumberFormatException =>
             ICsvSmiParser.csvSmiParserLogger.warn("Failed to parse GPU ID: " + parts(1).trim, e)
@@ -53,7 +55,7 @@ trait ICsvSmiParser {
 //        case e: NumberFormatException =>
 //          ICsvSmiParser.csvSmiParserLogger.warn("Failed to parse GPU ID: " + parts(1).trim, e)
 //      }
-      accelerators
+    accelerators.toList
     }
 
   //)

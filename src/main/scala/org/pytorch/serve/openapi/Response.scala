@@ -1,12 +1,13 @@
 package org.pytorch.serve.openapi
 
 import java.util
+import scala.collection.mutable
 
 class Response {
   @transient 
   private var code: String = null
   private var description: String = null
-  private var content: util.Map[String, MediaType] = null
+  private var content: mutable.Map[String, MediaType] = null
 
   def this(code: String, description: String) ={
     this()
@@ -18,7 +19,7 @@ class Response {
     this()
     this.code = code
     this.description = description
-    content = new util.LinkedHashMap[String, MediaType]
+    content = new mutable.LinkedHashMap[String, MediaType]
     content.put(mediaType.getContentType, mediaType)
   }
 
@@ -30,14 +31,14 @@ class Response {
     this.description = description
   }
 
-  def getContent: util.Map[String, MediaType] = content
+  def getContent: Map[String, MediaType] = content.toMap
 
-  def setContent(content: util.Map[String, MediaType]): Unit = {
-    this.content = content
+  def setContent(content: Map[String, MediaType]): Unit = {
+    this.content ++= content
   }
 
   def addContent(mediaType: MediaType): Unit = {
-    if (content == null) content = new util.LinkedHashMap[String, MediaType]
+    if (content == null) content = new mutable.LinkedHashMap[String, MediaType]
     content.put(mediaType.getContentType, mediaType)
   }
 }

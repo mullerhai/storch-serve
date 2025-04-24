@@ -1,7 +1,8 @@
 package org.pytorch.serve.workflow.messages
 
 import java.util
-import scala.jdk.CollectionConverters._
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 object ListWorkflowResponse {
   class WorkFlowItem( var workflowName: String,  var workflowUrl: String) {
@@ -22,7 +23,7 @@ object ListWorkflowResponse {
 class ListWorkflowResponse {
   
   private var nextPageToken: String = null
-  private var workflows: util.List[ListWorkflowResponse.WorkFlowItem] = new util.ArrayList[ListWorkflowResponse.WorkFlowItem]
+  private var workflows: ListBuffer[ListWorkflowResponse.WorkFlowItem] = new ListBuffer[ListWorkflowResponse.WorkFlowItem]
 
   def getNextPageToken: String = nextPageToken
 
@@ -30,13 +31,13 @@ class ListWorkflowResponse {
     this.nextPageToken = nextPageToken
   }
 
-  def getWorkflows: util.List[ListWorkflowResponse.WorkFlowItem] = workflows
+  def getWorkflows: List[ListWorkflowResponse.WorkFlowItem] = workflows.toList
 
-  def setWorkflows(workflows: util.List[ListWorkflowResponse.WorkFlowItem]): Unit = {
-    this.workflows = workflows
+  def setWorkflows(workflows: List[ListWorkflowResponse.WorkFlowItem]): Unit = {
+    this.workflows.addAll(workflows)
   }
 
   def addModel(workflowName: String, workflowUrl: String): Unit = {
-    workflows.add(new ListWorkflowResponse.WorkFlowItem(workflowName, workflowUrl))
+    workflows.append(new ListWorkflowResponse.WorkFlowItem(workflowName, workflowUrl))
   }
 }

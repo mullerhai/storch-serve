@@ -1,24 +1,18 @@
 package org.pytorch.serve.wlm
 
-import java.time.Duration
-import java.time.Instant
-import java.util
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.LinkedBlockingDeque
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import org.pytorch.serve.job.Job
-import org.pytorch.serve.job.JobGroup
+import org.pytorch.serve.job.{Job, JobGroup}
 import org.pytorch.serve.wlm.Model
+
+import java.time.{Duration, Instant}
+import java.util
+import java.util.concurrent.*
+import java.util.concurrent.atomic.AtomicBoolean
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 //import org.pytorch.serve.servingsdk.Model
-import org.pytorch.serve.util.messages.BaseModelRequest
-import org.pytorch.serve.util.messages.ModelWorkerResponse
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import org.pytorch.serve.util.messages.{BaseModelRequest, ModelWorkerResponse}
 import org.pytorch.serve.wlm.BatchAggregator
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.jdk.CollectionConverters.*
 
@@ -35,7 +29,7 @@ class SequenceBatching(model: Model) extends BatchAggregator(model) {
   private var isPollJobGroup: AtomicBoolean = new AtomicBoolean(false)
   // A list of jobGroupIds which are added into current batch. These jobGroupIds need to be added
   // back to eventJobGroupIds once their jobs are processed by a batch.
-  protected var currentJobGroupIds: util.LinkedList[String] = new util.LinkedList[String]
+  protected var currentJobGroupIds: ListBuffer[String] = new ListBuffer[String]
 
   private val running = new AtomicBoolean(true)
   private var localCapacity = Math.max(1, model.getMaxNumSequence / model.getMinWorkers)
@@ -63,29 +57,20 @@ class SequenceBatching(model: Model) extends BatchAggregator(model) {
     this.eventDispatcher.interrupt()
   }
 
-  @throws[InterruptedException]
-  private def pollJobGroup(): Unit = {
-    if (isPollJobGroup.getAndSet(true)) return
-    val tmpJobGroups = new util.LinkedHashSet[String]
-    val jobGroupId = model.getPendingJobGroups.poll(Long.MaxValue, TimeUnit.MILLISECONDS)
-    if (jobGroupId != null) {
-      addJobGroup(jobGroupId)
-      val quota = Math.min(this.localCapacity - jobsQueue.size, Math.max(1, model.getPendingJobGroups.size / model.getMaxWorkers))
-      if (quota > 0 && model.getPendingJobGroups.size > 0) model.getPendingJobGroups.drainTo(tmpJobGroups, quota)
-//      import scala.collection.JavaConversions._
-      for (jGroupId <- tmpJobGroups.asScala) {
-        addJobGroup(jGroupId)
-      }
+  override def sendResponse(message: ModelWorkerResponse): Boolean = {
+    val jobDone = super.sendResponse(message)
+    if (jobDone && currentJobGroupIds.nonEmpty) {
+      eventJobGroupIds.addAll(currentJobGroupIds.asJava)
+      currentJobGroupIds.clear()
     }
-    isPollJobGroup.set(false)
+    jobDone
   }
 
-  @throws[InterruptedException]
-  protected def pollInferJob(): Unit = {
-    model.pollInferJob(jobs, model.getBatchSize, jobsQueue)
-//    import scala.collection.JavaConversions._
-    for (job <- jobs.values.asScala) {
-      if (job.getGroupId != null) currentJobGroupIds.add(job.getGroupId)
+  override def sendError(message: BaseModelRequest, error: String, status: Int): Unit = {
+    super.sendError(message, error, status)
+    if (currentJobGroupIds.nonEmpty) {
+      eventJobGroupIds.addAll(currentJobGroupIds.asJava)
+      currentJobGroupIds.clear()
     }
   }
 
@@ -114,29 +99,37 @@ class SequenceBatching(model: Model) extends BatchAggregator(model) {
     else SequenceBatching.logger.error("Failed to process requestId: {}, sequenceId: {}", job.getPayload.getRequestId, job.getGroupId)
   }
 
-  override def sendResponse(message: ModelWorkerResponse): Boolean = {
-    val jobDone = super.sendResponse(message)
-    if (jobDone && !currentJobGroupIds.isEmpty) {
-      eventJobGroupIds.addAll(currentJobGroupIds)
-      currentJobGroupIds.clear()
-    }
-    jobDone
-  }
-
-  override def sendError(message: BaseModelRequest, error: String, status: Int): Unit = {
-    super.sendError(message, error, status)
-    if (!currentJobGroupIds.isEmpty) {
-      eventJobGroupIds.addAll(currentJobGroupIds)
-      currentJobGroupIds.clear()
-    }
-  }
-
   override def cleanJobs(): Unit = {
     super.cleanJobs()
-    if (!currentJobGroupIds.isEmpty) {
-      eventJobGroupIds.addAll(currentJobGroupIds)
+    if (currentJobGroupIds.nonEmpty) {
+      eventJobGroupIds.addAll(currentJobGroupIds.asJava)
       currentJobGroupIds.clear()
     }
+  }
+
+  @throws[InterruptedException]
+  protected def pollInferJob(): Unit = {
+    model.pollInferJob(jobs, model.getBatchSize, jobsQueue)
+    //    import scala.collection.JavaConversions._
+    for (job <- jobs.values) {
+      if (job.getGroupId != null) currentJobGroupIds.append(job.getGroupId)
+    }
+  }
+
+  @throws[InterruptedException]
+  private def pollJobGroup(): Unit = {
+    if (isPollJobGroup.getAndSet(true)) return
+    val tmpJobGroups = new mutable.LinkedHashSet[String]
+    val jobGroupId = model.getPendingJobGroups.poll(Long.MaxValue, TimeUnit.MILLISECONDS)
+    if (jobGroupId != null) {
+      addJobGroup(jobGroupId)
+      val quota = Math.min(this.localCapacity - jobsQueue.size, Math.max(1, model.getPendingJobGroups.size / model.getMaxWorkers))
+      if (quota > 0 && model.getPendingJobGroups.size > 0) model.getPendingJobGroups.drainTo(tmpJobGroups.asJava, quota)
+      for (jGroupId <- tmpJobGroups) {
+        addJobGroup(jGroupId)
+      }
+    }
+    isPollJobGroup.set(false)
   }
 
   override def shutdown(): Unit = {

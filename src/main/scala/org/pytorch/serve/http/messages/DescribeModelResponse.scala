@@ -1,14 +1,13 @@
 package org.pytorch.serve.http.messages
 
 import com.google.gson.{JsonObject, JsonSyntaxException}
+import org.pytorch.serve.util.JsonUtils
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.nio.charset.Charset
 import java.util
 import java.util.Date
-import org.pytorch.serve.util.JsonUtils
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 object DescribeModelResponse {
   private val logger = LoggerFactory.getLogger(classOf[DescribeModelResponse])
@@ -125,7 +124,7 @@ class DescribeModelResponse {
   private var parallelType: String = null
   private var parallelLevel = 0
   private var deviceType: String = null
-  private var deviceIds: util.List[Integer] = null
+  private var deviceIds: ListBuffer[Int] = new ListBuffer[Int]
   private var continuousBatching = false
   private var useJobTicket = false
   private var useVenv = false
@@ -136,7 +135,7 @@ class DescribeModelResponse {
   private var maxSequenceJobQueueSize = 0
   private var status: String = null
   private var loadedAtStartup = false
-  private var workers: util.List[DescribeModelResponse.Worker] =  new util.ArrayList[DescribeModelResponse.Worker]
+  private var workers: ListBuffer[DescribeModelResponse.Worker] = new ListBuffer[DescribeModelResponse.Worker]
   private var metrics: DescribeModelResponse.Metrics = null
   private var jobQueueStatus: DescribeModelResponse.JobQueueStatus = null
   private var customizedMetadata: JsonObject = null
@@ -243,10 +242,10 @@ class DescribeModelResponse {
     this.deviceType = deviceType
   }
 
-  def getDeviceIds: util.List[Integer] = deviceIds
+  def getDeviceIds: List[Int] = deviceIds.toList
 
-  def setDeviceIds(deviceIds: util.List[Integer]): Unit = {
-    this.deviceIds = deviceIds
+  def setDeviceIds(deviceIds: List[Int]): Unit = {
+    this.deviceIds.addAll(deviceIds)
   }
 
   def getContinuousBatching: Boolean = continuousBatching
@@ -303,10 +302,10 @@ class DescribeModelResponse {
     this.status = status
   }
 
-  def getWorkers: util.List[DescribeModelResponse.Worker] = workers
+  def getWorkers: List[DescribeModelResponse.Worker] = workers.toList
 
-  def setWorkers(workers: util.List[DescribeModelResponse.Worker]): Unit = {
-    this.workers = workers
+  def setWorkers(workers: List[DescribeModelResponse.Worker]): Unit = {
+    this.workers.addAll(workers)
   }
 
   def addWorker(id: String, startTime: Long, isRunning: Boolean, gpuId: Int, memoryUsage: Long, pid: Int, gpuUsage: String): Unit = {
@@ -319,7 +318,7 @@ class DescribeModelResponse {
     worker.setPid(pid)
     worker.setGpu(gpuId >= 0)
     worker.setGpuUsage(gpuUsage)
-    workers.add(worker)
+    workers.append(worker)
   }
 
   def getMetrics: DescribeModelResponse.Metrics = metrics

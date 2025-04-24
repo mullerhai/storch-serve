@@ -1,24 +1,20 @@
 package org.pytorch.serve.snapshot
 
 import com.google.gson.JsonObject
-import java.io.File
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util
-import java.util.Map.Entry
 import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.model.ModelException
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.servingsdk.snapshot.Snapshot
-import org.pytorch.serve.servingsdk.snapshot.SnapshotSerializer
+import org.pytorch.serve.archive.model.{ModelException, ModelNotFoundException}
+import org.pytorch.serve.servingsdk.snapshot.{Snapshot, SnapshotSerializer}
 import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.wlm.Model
-import org.pytorch.serve.wlm.ModelManager
-import org.pytorch.serve.wlm.WorkerInitializationException
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import org.pytorch.serve.wlm.{Model, ModelManager, WorkerInitializationException}
+import org.slf4j.{Logger, LoggerFactory}
+
+import java.io.{File, IOException}
+import java.text.SimpleDateFormat
+import java.util
+import java.util.Date
+import java.util.Map.Entry
+import scala.collection.mutable
+import scala.jdk.CollectionConverters.*
 import scala.util.control.Breaks.{break, breakable}
 object SnapshotManager {
   private val logger = LoggerFactory.getLogger(classOf[SnapshotManager])
@@ -39,28 +35,28 @@ final class SnapshotManager private(private var configManager: ConfigManager) {
   private def saveSnapshot(snapshotName: String): Unit = {
     if (configManager.isSnapshotDisabled) return
     val defModels = modelManager.getDefaultModels(true)
-    val modelNameMap = new util.HashMap[String, util.Map[String, JsonObject]]
+    val modelNameMap = new mutable.HashMap[String, Map[String, JsonObject]]
     try {
       var modelCount = 0
-//      import scala.collection.JavaConversions._
-      for (m <- defModels.entrySet.asScala) {
+
+      for (m <- defModels.toSeq) {
         breakable(
-          if (m.getValue.isWorkflowModel) break() //todo: continue is not supported
+          if (m._2.isWorkflowModel) break() //todo: continue is not supported
         )
-        
-        val versionModels = modelManager.getAllModelVersions(m.getKey)
-        val modelInfoMap = new util.HashMap[String, JsonObject]
-//        import scala.collection.JavaConversions._
-        for (versionedModel <- versionModels.asScala) {
-          val version = String.valueOf(versionedModel.getKey)
-          val isDefaultVersion = m.getValue.getVersion == versionedModel.getValue.getVersion
-          modelInfoMap.put(version, versionedModel.getValue.getModelState(isDefaultVersion))
+
+        val versionModels = modelManager.getAllModelVersions(m._1)
+        val modelInfoMap = new mutable.HashMap[String, JsonObject]
+
+        for (versionedModel <- versionModels.toSeq) {
+          val version = String.valueOf(versionedModel._1)
+          val isDefaultVersion = m._2.getVersion == versionedModel._2.getVersion
+          modelInfoMap.put(version, versionedModel._2.getModelState(isDefaultVersion))
           modelCount += 1
         }
-        modelNameMap.put(m.getKey, modelInfoMap)
+        modelNameMap.put(m._1, modelInfoMap.toMap)
       }
       val snapshot = new Snapshot(snapshotName, modelCount)
-      snapshot.setModels(modelNameMap)
+      snapshot.setModels(modelNameMap.map((k, v) => (k, v.asJava)).asJava)
       snapshotSerializer.saveSnapshot(snapshot, configManager.getConfiguration)
     } catch {
       case e: ModelNotFoundException =>

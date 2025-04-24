@@ -1,24 +1,15 @@
 package org.pytorch.serve.archive.utils
 
-import java.io.File
-import java.io.FileFilter
-import java.io.FileInputStream
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
-import java.nio.file.Files
-import java.security.DigestInputStream
-import java.security.MessageDigest
-import java.security.NoSuchAlgorithmException
-import java.util.UUID
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 import org.apache.commons.compress.archivers.ArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
-import org.apache.commons.io.FileUtils
-import org.apache.commons.io.IOUtils
+import org.apache.commons.io.{FileUtils, IOUtils}
+
+import java.io.*
+import java.nio.file.Files
+import java.security.{DigestInputStream, MessageDigest, NoSuchAlgorithmException}
+import java.util.UUID
+import java.util.zip.{ZipEntry, ZipInputStream, ZipOutputStream}
 
 object ZipUtils {
   @throws[IOException]
@@ -75,11 +66,11 @@ object ZipUtils {
   }
 
   @throws[IOException]
-  def unzip(is: InputStream, eTag: String, `type`: String, isMar: Boolean): File = {
+  def unzip(is: InputStream, eTag: String, types: String, isMar: Boolean): File = {
     val tmpDir = FileUtils.getTempDirectory
-    val modelDir = new File(tmpDir, `type`)
+    val modelDir = new File(tmpDir, types)
     FileUtils.forceMkdir(modelDir)
-    val tmp = File.createTempFile(`type`, ".download")
+    val tmp = File.createTempFile(types, ".download")
     FileUtils.forceDelete(tmp)
     FileUtils.forceMkdir(tmp)
     var md: MessageDigest = null
@@ -130,9 +121,9 @@ object ZipUtils {
   }
 
   @throws[IOException]
-  def createTempDir(eTag: String, `type`: String): File = {
+  def createTempDir(eTag: String, types: String): File = {
     val tmpDir = FileUtils.getTempDirectory
-    val modelDir = new File(tmpDir, `type`)
+    val modelDir = new File(tmpDir, types)
     val eTagTmp = if (eTag == null) UUID.randomUUID.toString.replaceAll("-", "") else eTag
 //    if (eTag == null) then eTag = UUID.randomUUID.toString.replaceAll("-", "")
     val dir = new File(modelDir, eTagTmp)

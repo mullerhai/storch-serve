@@ -5,11 +5,10 @@ import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.ByteToMessageDecoder
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.NotEnoughDataDecoderException
+import org.pytorch.serve.util.messages.{ModelWorkerResponse, Predictions}
 
 import java.util
-import org.pytorch.serve.util.messages.ModelWorkerResponse
-import org.pytorch.serve.util.messages.Predictions
-
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 class ModelResponseDecoder(private val maxBufferSize: Int) extends ByteToMessageDecoder {
   override protected def decode(ctx: ChannelHandlerContext, in: ByteBuf, out: util.List[AnyRef]): Unit = {
@@ -24,7 +23,7 @@ class ModelResponseDecoder(private val maxBufferSize: Int) extends ByteToMessage
       var len = CodecUtils.readLength(in, maxBufferSize)
       if (len == CodecUtils.BUFFER_UNDER_RUN) return
       resp.setMessage(CodecUtils.readString(in, len))
-      val predictions = new util.ArrayList[Predictions]
+      val predictions = new ListBuffer[Predictions]
       while (len  != CodecUtils.END) {
         if (len == CodecUtils.BUFFER_UNDER_RUN) return
         val prediction = new Predictions
@@ -48,10 +47,10 @@ class ModelResponseDecoder(private val maxBufferSize: Int) extends ByteToMessage
         len = CodecUtils.readLength(in, maxBufferSize)
         if (len == CodecUtils.BUFFER_UNDER_RUN) return
         prediction.setResp(CodecUtils.read(in, len))
-        predictions.add(prediction)
+        predictions.append(prediction)
         len = CodecUtils.readLength(in, maxBufferSize)
       }
-      resp.setPredictions(predictions)
+      resp.setPredictions(predictions.toList)
       out.add(resp)
       completed = true
     } catch {

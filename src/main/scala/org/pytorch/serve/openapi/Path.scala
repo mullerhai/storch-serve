@@ -1,6 +1,7 @@
 package org.pytorch.serve.openapi
 
 import java.util
+import scala.collection.mutable.ListBuffer
 
 class Path {
   private var get: Operation = null
@@ -10,7 +11,7 @@ class Path {
   private var delete: Operation = null
   private var patch: Operation = null
   private var options: Operation = null
-  private var parameters: util.List[Parameter] = null
+  private var parameters: ListBuffer[Parameter] = new ListBuffer[Parameter]
 
   def getGet: Operation = get
 
@@ -54,9 +55,9 @@ class Path {
     this.options = options
   }
 
-  def getParameters: util.List[Parameter] = parameters
+  def getParameters: List[Parameter] = parameters.toList
 
-  def setParameters(parameters: util.List[Parameter]): Unit = {
-    this.parameters = parameters
+  def setParameters(parameters: List[Parameter]): Unit = {
+    this.parameters.appendAll(parameters)
   }
 }

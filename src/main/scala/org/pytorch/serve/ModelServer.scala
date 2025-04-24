@@ -1,64 +1,37 @@
 package org.pytorch.serve
 
-import io.grpc.Server
-import io.grpc.ServerBuilder
-import io.grpc.ServerInterceptors
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder
+import io.grpc.{Server, ServerBuilder, ServerInterceptors}
 import io.netty.bootstrap.ServerBootstrap
-import io.netty.channel.ChannelFuture
-import io.netty.channel.ChannelFutureListener
-import io.netty.channel.ChannelOption
-import io.netty.channel.EventLoopGroup
-import io.netty.channel.FixedRecvByteBufAllocator
-import io.netty.channel.ServerChannel
+import io.netty.channel.*
 import io.netty.handler.ssl.SslContext
-import io.netty.util.internal.logging.InternalLoggerFactory
-import io.netty.util.internal.logging.Slf4JLoggerFactory
-
-import java.io.File
-import java.io.IOException
-import java.lang.annotation.Annotation
-import java.net.InetSocketAddress
-import java.security.GeneralSecurityException
-import java.util
-import java.util.InvalidPropertiesFormatException
-import java.util.ServiceLoader
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import org.apache.commons.cli.CommandLine
-import org.apache.commons.cli.DefaultParser
-import org.apache.commons.cli.HelpFormatter
-import org.apache.commons.cli.Options
-import org.apache.commons.cli.ParseException
+import io.netty.util.internal.logging.{InternalLoggerFactory, Slf4JLoggerFactory}
+import org.apache.commons.cli.*
 import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.model.ModelArchive
-import org.pytorch.serve.archive.model.ModelException
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.grpcimpl.GRPCInterceptor
-import org.pytorch.serve.grpcimpl.GRPCServiceFactory
+import org.pytorch.serve.archive.model.{ModelArchive, ModelException, ModelNotFoundException}
+import org.pytorch.serve.grpcimpl.{GRPCInterceptor, GRPCServiceFactory}
 import org.pytorch.serve.http.messages.RegisterModelRequest
-import org.pytorch.serve.metrics.MetricCache
-import org.pytorch.serve.metrics.MetricManager
+import org.pytorch.serve.metrics.{MetricCache, MetricManager}
 import org.pytorch.serve.servingsdk.ModelServerEndpoint
 import org.pytorch.serve.servingsdk.annotations.Endpoint
 import org.pytorch.serve.servingsdk.annotations.helpers.EndpointTypes
 import org.pytorch.serve.servingsdk.impl.PluginsManager
-import org.pytorch.serve.snapshot.InvalidSnapshotException
-import org.pytorch.serve.snapshot.SnapshotManager
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.Connector
-import org.pytorch.serve.util.ConnectorType
-import org.pytorch.serve.util.ServerGroups
-import org.pytorch.serve.util.TokenAuthorization
-import org.pytorch.serve.wlm.Model
-import org.pytorch.serve.wlm.ModelManager
-import org.pytorch.serve.wlm.WorkLoadManager
-import org.pytorch.serve.wlm.WorkerInitializationException
+import org.pytorch.serve.snapshot.{InvalidSnapshotException, SnapshotManager}
+import org.pytorch.serve.util.*
+import org.pytorch.serve.wlm.{Model, ModelManager, WorkLoadManager, WorkerInitializationException}
 import org.pytorch.serve.workflow.WorkflowManager
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+import org.slf4j.{Logger, LoggerFactory}
 
+import java.io.{File, IOException}
+import java.lang.annotation.Annotation
+import java.net.InetSocketAddress
+import java.security.GeneralSecurityException
+import java.util
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.{ExecutionException, TimeUnit}
+import java.util.{InvalidPropertiesFormatException, ServiceLoader}
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 import scala.util.control.Breaks.{break, breakable}
 object ModelServer {
@@ -104,7 +77,7 @@ class ModelServer(configManager: ConfigManager){
   private var inferencegRPCServer: Server = null
   private var managementgRPCServer: Server = null
   private val OIPgRPCServer: Server = null
-  private val futures = new util.ArrayList[ChannelFuture](2)
+  private val futures = new ListBuffer[ChannelFuture]() //new util.ArrayList[ChannelFuture](2)
   private val stopped = new AtomicBoolean(false)
 //  val configManager: ConfigManager
   @throws[InterruptedException]
@@ -114,11 +87,11 @@ class ModelServer(configManager: ConfigManager){
   def startAndWait(): Unit = {
     try {
       val channelFutures = startRESTserver
-      startGRPCServers()
+      //      startGRPCServers()
       // Create and schedule metrics manager
       if (!configManager.isSystemMetricsDisabled) MetricManager.scheduleMetrics(configManager)
       System.out.println("Model server started.") // NOPMD
-      channelFutures.get(0).sync
+      channelFutures(0).sync
     } catch {
       case e: InvalidPropertiesFormatException =>
         logger.error("Invalid configuration", e)
@@ -285,7 +258,7 @@ class ModelServer(configManager: ConfigManager){
   @throws[IOException]
   @throws[GeneralSecurityException]
   @throws[InvalidSnapshotException]
-  def startRESTserver: util.List[ChannelFuture] = {
+  def startRESTserver: ListBuffer[ChannelFuture] = {
     stopped.set(false)
     configManager.validateConfigurations()
     logger.info(configManager.dumpConfigurations)
@@ -298,15 +271,15 @@ class ModelServer(configManager: ConfigManager){
     val workerGroup = serverGroups.getChildGroup
     futures.clear()
     if (!(inferenceConnector == managementConnector)) {
-      futures.add(initializeServer(inferenceConnector, serverGroup, workerGroup, ConnectorType.INFERENCE_CONNECTOR))
-      futures.add(initializeServer(managementConnector, serverGroup, workerGroup, ConnectorType.MANAGEMENT_CONNECTOR))
+      futures.append(initializeServer(inferenceConnector, serverGroup, workerGroup, ConnectorType.INFERENCE_CONNECTOR))
+      futures.append(initializeServer(managementConnector, serverGroup, workerGroup, ConnectorType.MANAGEMENT_CONNECTOR))
     }
-    else futures.add(initializeServer(inferenceConnector, serverGroup, workerGroup, ConnectorType.ALL))
+    else futures.append(initializeServer(inferenceConnector, serverGroup, workerGroup, ConnectorType.ALL))
     if (configManager.isMetricApiEnable) {
       val metricsGroup = serverGroups.getMetricsGroup
       val metricsConnector = configManager.getListener(ConnectorType.METRICS_CONNECTOR)
       metricsConnector.clean()
-      futures.add(initializeServer(metricsConnector, serverGroup, metricsGroup, ConnectorType.METRICS_CONNECTOR))
+      futures.append(initializeServer(metricsConnector, serverGroup, metricsGroup, ConnectorType.METRICS_CONNECTOR))
     }
     SnapshotManager.getInstance.saveStartupSnapshot()
     futures
@@ -338,7 +311,7 @@ class ModelServer(configManager: ConfigManager){
 
   def registerEndpoints(`type`: EndpointTypes) = {
     val loader = ServiceLoader.load(classOf[ModelServerEndpoint])
-    val ep = new util.HashMap[String, ModelServerEndpoint]
+    val ep = new mutable.HashMap[String, ModelServerEndpoint]
 //    import scala.collection.JavaConversions._
     for (mep <- loader.asScala) {
       val modelServerEndpointClassObj = mep.getClass
@@ -360,36 +333,13 @@ class ModelServer(configManager: ConfigManager){
     }
   }
 
-  @throws[ModelNotFoundException]
-   def exitModelStore(): Unit = {
-    val modelMgr = ModelManager.getInstance
-    val defModels = modelMgr.getDefaultModels
-//    import scala.collection.JavaConversions._
-    for (m <- defModels.entrySet.asScala) {
-      val versionModels = modelMgr.getAllModelVersions(m.getKey)
-      val defaultVersionId = m.getValue.getVersion
-//      import scala.collection.JavaConversions._
-      for (versionedModel <- versionModels.asScala) {
-        breakable(
-        if (defaultVersionId == versionedModel.getKey) //
-          break()
-          // continue //todo: continue is not supported
-        )
-        logger.info("Unregistering model {} version {}", versionedModel.getValue.getModelName, versionedModel.getKey)
-        modelMgr.unregisterModel(versionedModel.getValue.getModelName, versionedModel.getKey, true)
-      }
-      logger.info("Unregistering model {} version {}", m.getValue.getModelName, defaultVersionId)
-      modelMgr.unregisterModel(m.getValue.getModelName, defaultVersionId, true)
-    }
-  }
-
   def stop(): Unit = {
     if (stopped.get) return
     stopped.set(true)
     stopgRPCServer(inferencegRPCServer)
     stopgRPCServer(managementgRPCServer)
 //    import scala.collection.JavaConversions._
-    for (future <- futures.asScala) {
+    for (future <- futures) {
       try future.channel.close.sync
       catch {
         case ignore: InterruptedException =>
@@ -403,6 +353,29 @@ class ModelServer(configManager: ConfigManager){
     catch {
       case e: Exception =>
         e.printStackTrace() // NOPMD
+    }
+  }
+
+  @throws[ModelNotFoundException]
+  def exitModelStore(): Unit = {
+    val modelMgr = ModelManager.getInstance
+    val defModels = modelMgr.getDefaultModels
+
+    for (m <- defModels.toSeq) {
+      val versionModels = modelMgr.getAllModelVersions(m._1)
+      val defaultVersionId = m._2.getVersion
+
+      for (versionedModel <- versionModels.toSeq) {
+        breakable(
+          if (defaultVersionId == versionedModel._1) //
+            break()
+          // continue //todo: continue is not supported
+        )
+        logger.info("Unregistering model {} version {}", versionedModel._2.getModelName, versionedModel._1)
+        modelMgr.unregisterModel(versionedModel._2.getModelName, versionedModel._1, true)
+      }
+      logger.info("Unregistering model {} version {}", m._2.getModelName, defaultVersionId)
+      modelMgr.unregisterModel(m._2.getModelName, defaultVersionId, true)
     }
   }
 }

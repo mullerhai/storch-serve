@@ -1,11 +1,12 @@
 package org.pytorch.serve.metrics.configuration
 
 import java.util
+import scala.collection.mutable.ListBuffer
 
 class MetricSpecification {
   private var name: String = null
   private var unit: String = null
-  private var dimensions: util.List[String] = null
+  private var dimensions: ListBuffer[String] = null
 
   def setName(name: String): Unit = {
     this.name = name
@@ -19,11 +20,11 @@ class MetricSpecification {
 
   def getUnit: String = this.unit
 
-  def setDimensions(dimensions: util.List[String]): Unit = {
-    this.dimensions = dimensions
-  }
+  def getDimensions: List[String] = this.dimensions.toList
 
-  def getDimensions: util.List[String] = this.dimensions
+  def setDimensions(dimensions: List[String]): Unit = {
+    this.dimensions.appendAll(dimensions)
+  }
 
   override def toString: String = "name: " + this.name + ", unit: " + this.unit + ", dimensions: " + this.dimensions
 

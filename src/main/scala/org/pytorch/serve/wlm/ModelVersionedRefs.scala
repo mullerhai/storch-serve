@@ -1,14 +1,13 @@
 package org.pytorch.serve.wlm
 
+import org.pytorch.serve.archive.model.ModelVersionNotFoundException
+import org.pytorch.serve.http.{ConflictStatusException, InvalidModelVersionException}
+import org.pytorch.serve.wlm.Model
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.util
 import java.util.concurrent.ConcurrentHashMap
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
-import org.pytorch.serve.http.ConflictStatusException
-import org.pytorch.serve.http.InvalidModelVersionException
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import  org.pytorch.serve.wlm.Model
-
+import scala.collection.concurrent.TrieMap
 import scala.jdk.CollectionConverters.*
 
 object ModelVersionedRefs {
@@ -17,7 +16,7 @@ object ModelVersionedRefs {
 
 final class ModelVersionedRefs {
 //  this.modelsVersionMap = new ConcurrentHashMap[String, Model]
-  private var modelsVersionMap: ConcurrentHashMap[String, Model] = new ConcurrentHashMap[String, Model]
+private var modelsVersionMap: TrieMap[String, Model] = new TrieMap[String, Model]
   private var defaultVersion: String = null
 
   /**
@@ -55,8 +54,19 @@ final class ModelVersionedRefs {
   def setDefaultVersion(versionId: String): Unit = {
     val model = this.modelsVersionMap.get(versionId)
     if (model == null) throw new ModelVersionNotFoundException("Model version " + versionId + " does not exist for model " + this.getDefaultModel.getModelName)
-    ModelVersionedRefs.logger.debug("Setting default version to {} for model {}", versionId, model.getModelName)
+    ModelVersionedRefs.logger.debug("Setting default version to {} for model {}", versionId, model.get.getModelName)
     this.defaultVersion = versionId
+  }
+
+  /**
+   * Returns the default Model obj
+   *
+   * @param None
+   * @return On Success - a Model Obj corresponding to the default Model obj On Failure - null
+   */
+  def getDefaultModel: Model = {
+    // TODO should not throw invalid here as it has been already validated??
+    this.modelsVersionMap.get(this.defaultVersion).get
   }
 
   /**
@@ -76,8 +86,8 @@ final class ModelVersionedRefs {
     if (this.defaultVersion == versionId && modelsVersionMap.size > 1) throw new InvalidModelVersionException(String.format("Can't remove default version: %s", versionId))
     val model = this.modelsVersionMap.remove(versionId)
     if (model == null) throw new ModelVersionNotFoundException(String.format("Model version: %s not found", versionId))
-    ModelVersionedRefs.logger.debug("Removed model: {} version: {}", model.getModelName, versionId)
-    model
+    ModelVersionedRefs.logger.debug("Removed model: {} version: {}", model.get.getModelName, versionId)
+    model.get
   }
 
   /**
@@ -88,25 +98,14 @@ final class ModelVersionedRefs {
    */
   def getVersionModel(versionId: String): Model = {
     var model: Model = null
-    if (versionId != null) model = this.modelsVersionMap.get(versionId)
+    if (versionId != null) model = this.modelsVersionMap.get(versionId).get
     else model = this.getDefaultModel
     model
-  }
-
-  /**
-   * Returns the default Model obj
-   *
-   * @param None
-   * @return On Success - a Model Obj corresponding to the default Model obj On Failure - null
-   */
-  def getDefaultModel: Model = {
-    // TODO should not throw invalid here as it has been already validated??
-    this.modelsVersionMap.get(this.defaultVersion)
   }
 
   // scope for a nice generator pattern impl here
   // TODO what is this for?
   def forAllVersions: Model = null
 
-  def getAllVersions: util.Set[util.Map.Entry[String, Model]] = this.modelsVersionMap.entrySet
+  def getAllVersions: Map[String, Model] = this.modelsVersionMap.toMap //.entrySet
 }

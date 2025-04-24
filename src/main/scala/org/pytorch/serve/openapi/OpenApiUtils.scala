@@ -2,13 +2,13 @@ package org.pytorch.serve.openapi
 
 import io.netty.handler.codec.http.HttpHeaderValues
 import io.prometheus.client.exporter.common.TextFormat
-import java.util
 import org.pytorch.serve.archive.model.Manifest
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.ConnectorType
-import org.pytorch.serve.util.JsonUtils
+import org.pytorch.serve.util.{ConfigManager, ConnectorType, JsonUtils}
 import org.pytorch.serve.wlm.Model
-import scala.jdk.CollectionConverters._
+
+import java.util
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 object OpenApiUtils {
   def listApis(`type`: ConnectorType): String = {
     val openApi = new OpenApi
@@ -206,11 +206,11 @@ object OpenApiUtils {
     operation.addParameter(new QueryParameter("synchronous", "boolean", "false", "Decides whether creation of worker synchronous or not, default: false."))
     operation.addParameter(new QueryParameter("s3_sse_kms", "boolean", "false", "Model mar file is S3 SSE KMS(server side encryption) enabled or not, default: false."))
     val types = Manifest.RuntimeType.values
-    val runtimeTypes = new util.ArrayList[String](types.length)
+    val runtimeTypes = new ListBuffer[String]() //types.length)
     for (`type` <- types) {
-      runtimeTypes.add(`type`.toString)
+      runtimeTypes.append(`type`.toString)
     }
-    runtime.getSchema.setEnumeration(runtimeTypes)
+    runtime.getSchema.setEnumeration(runtimeTypes.toList)
     val status = getStatusResponse
     val error = getErrorResponse
     operation.addResponse(new Response("200", "Model registered", status))
@@ -278,11 +278,11 @@ object OpenApiUtils {
     worker.addProperty("startTime", new Schema("string", "Worker start time"), true)
     worker.addProperty("gpu", new Schema("boolean", "If running on GPU"), false)
     val workerStatus = new Schema("string", "Worker status")
-    val status = new util.ArrayList[String]
-    status.add("READY")
-    status.add("LOADING")
-    status.add("UNLOADING")
-    workerStatus.setEnumeration(status)
+    val status = new ListBuffer[String]
+    status.append("READY")
+    status.append("LOADING")
+    status.append("UNLOADING")
+    workerStatus.setEnumeration(status.toList)
     worker.addProperty("status", workerStatus, true)
     workers.setItems(worker)
     schema.addProperty("workers", workers, true)

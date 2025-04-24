@@ -1,38 +1,20 @@
 package org.pytorch.serve.job
 
-import io.netty.buffer.ByteBuf
-import io.netty.buffer.Unpooled
-import io.netty.channel.Channel
-import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.DefaultFullHttpResponse
-import io.netty.handler.codec.http.DefaultHttpContent
-import io.netty.handler.codec.http.DefaultHttpResponse
-import io.netty.handler.codec.http.FullHttpResponse
-import io.netty.handler.codec.http.HttpHeaderNames
-import io.netty.handler.codec.http.HttpHeaderValues
-import io.netty.handler.codec.http.HttpResponse
-import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.handler.codec.http.HttpVersion
-import io.netty.handler.codec.http.LastHttpContent
+import io.netty.buffer.{ByteBuf, Unpooled}
+import io.netty.channel.{Channel, ChannelHandlerContext}
+import io.netty.handler.codec.http.*
 import io.netty.util.CharsetUtil
-import java.util
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
+import org.pytorch.serve.archive.model.{ModelNotFoundException, ModelVersionNotFoundException}
 import org.pytorch.serve.http.InternalServerException
 import org.pytorch.serve.http.messages.DescribeModelResponse
-import org.pytorch.serve.metrics.IMetric
-import org.pytorch.serve.metrics.MetricCache
-import org.pytorch.serve.util.ApiUtils
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.JsonUtils
-import org.pytorch.serve.util.NettyUtils
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.util.messages.WorkerCommands
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import org.pytorch.serve.metrics.{IMetric, MetricCache}
+import org.pytorch.serve.util.messages.{RequestInput, WorkerCommands}
+import org.pytorch.serve.util.{ApiUtils, ConfigManager, JsonUtils, NettyUtils}
+import org.slf4j.{Logger, LoggerFactory}
+
+import java.util
+import java.util.concurrent.{CompletableFuture, TimeUnit}
+import scala.jdk.CollectionConverters.*
 object RestJob {
   private val logger = LoggerFactory.getLogger(classOf[RestJob])
 }
@@ -41,9 +23,9 @@ class RestJob(private var ctx: ChannelHandlerContext, modelName: String, version
   final private var inferenceLatencyMetric = MetricCache.getInstance.getMetricFrontend("ts_inference_latency_microseconds")
   final private var queueLatencyMetric = MetricCache.getInstance.getMetricFrontend("ts_queue_latency_microseconds")
   final private var latencyMetricDimensionValues = util.Arrays.asList(getModelName, if (getModelVersion == null) "default"
-  else getModelVersion, ConfigManager.getInstance.getHostName)
+  else getModelVersion, ConfigManager.getInstance.getHostName).asScala
   final private var queueTimeMetric = MetricCache.getInstance.getMetricFrontend("QueueTime")
-  final private var queueTimeMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName)
+  final private var queueTimeMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName).asScala
   private var responsePromise: CompletableFuture[Array[Byte]] = null
   /**
    * numStreams is used to track 4 cases -1: stream end 0: non-stream response (default use case)
@@ -51,24 +33,24 @@ class RestJob(private var ctx: ChannelHandlerContext, modelName: String, version
    */
   private var numStreams = 0
 
-  override def response(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: util.Map[String, String]): Unit = {
+  override def response(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: Map[String, String]): Unit = {
     if (this.getCmd eq WorkerCommands.PREDICT) responseInference(body, contentType, statusCode, statusPhrase, responseHeaders)
     else if (this.getCmd eq WorkerCommands.DESCRIBE) responseDescribe(body, contentType, statusCode, statusPhrase, responseHeaders)
   }
 
-  private def responseDescribe(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: util.Map[String, String]): Unit = {
+  private def responseDescribe(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: Map[String, String]): Unit = {
     try {
       val respList = ApiUtils.getModelDescription(this.getModelName, this.getModelVersion)
-      if ((body != null && body.length != 0) && respList != null && respList.size == 1) respList.get(0).setCustomizedMetadata(body)
+      if ((body != null && body.length != 0) && respList != null && respList.size == 1) respList(0).setCustomizedMetadata(body)
       val status = if (statusPhrase == null) HttpResponseStatus.valueOf(statusCode)
       else new HttpResponseStatus(statusCode, statusPhrase)
       val resp = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, true)
       if (contentType != null && contentType.length > 0) resp.headers.set(HttpHeaderNames.CONTENT_TYPE, contentType)
       else resp.headers.set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON)
       if (responseHeaders != null) {
-//        import scala.collection.JavaConversions._
-        for (e <- responseHeaders.entrySet.asScala) {
-          resp.headers.set(e.getKey, e.getValue)
+
+        for (e <- responseHeaders.toSeq) {
+          resp.headers.set(e._1, e._2)
         }
       }
       val content = resp.content
@@ -82,22 +64,22 @@ class RestJob(private var ctx: ChannelHandlerContext, modelName: String, version
     }
   }
 
-  private def responseInference(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: util.Map[String, String]): Unit = {
+  private def responseInference(body: Array[Byte], contentType: CharSequence, statusCode: Int, statusPhrase: String, responseHeaders: Map[String, String]): Unit = {
     val inferTime = System.nanoTime - getBegin
     val status = if (statusPhrase == null) HttpResponseStatus.valueOf(statusCode)
     else new HttpResponseStatus(statusCode, statusPhrase)
     var resp: HttpResponse = null
-    if (responseHeaders != null && responseHeaders.containsKey(RequestInput.TS_STREAM_NEXT)) {
+    if (responseHeaders != null && responseHeaders.nonEmpty && responseHeaders.contains(RequestInput.TS_STREAM_NEXT)) {
       resp = new DefaultHttpResponse(HttpVersion.HTTP_1_1, status, false)
-      numStreams = if (responseHeaders.get(RequestInput.TS_STREAM_NEXT) == "true") numStreams + 1
+      numStreams = if (responseHeaders.get(RequestInput.TS_STREAM_NEXT).get == "true") numStreams + 1
       else -1
     }
     else resp = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, true)
     if (contentType != null && contentType.length > 0) resp.headers.set(HttpHeaderNames.CONTENT_TYPE, contentType)
     if (responseHeaders != null) {
-//      import scala.collection.JavaConversions._
-      for (e <- responseHeaders.entrySet.asScala) {
-        resp.headers.set(e.getKey, e.getValue)
+
+      for (e <- responseHeaders.toSeq) {
+        resp.headers.set(e._1, e._2)
       }
     }
     /*
@@ -123,19 +105,19 @@ class RestJob(private var ctx: ChannelHandlerContext, modelName: String, version
     }
     else if (responsePromise != null) responsePromise.complete(body)
     if (numStreams <= 0) {
-      if (this.inferenceLatencyMetric != null) try this.inferenceLatencyMetric.addOrUpdate(this.latencyMetricDimensionValues, inferTime / 1000.0)
+      if (this.inferenceLatencyMetric != null) try this.inferenceLatencyMetric.addOrUpdate(this.latencyMetricDimensionValues.toList, inferTime / 1000.0)
       catch {
         case e: Exception =>
           RestJob.logger.error("Failed to update frontend metric ts_inference_latency_microseconds: ", e)
       }
-      if (this.queueLatencyMetric != null) try this.queueLatencyMetric.addOrUpdate(this.latencyMetricDimensionValues, (getScheduled - getBegin) / 1000.0)
+      if (this.queueLatencyMetric != null) try this.queueLatencyMetric.addOrUpdate(this.latencyMetricDimensionValues.toList, (getScheduled - getBegin) / 1000.0)
       catch {
         case e: Exception =>
           RestJob.logger.error("Failed to update frontend metric ts_queue_latency_microseconds: ", e)
       }
       RestJob.logger.debug("Waiting time ns: {}, Backend time ns: {}", getScheduled - getBegin, System.nanoTime - getScheduled)
       val queueTime = TimeUnit.MILLISECONDS.convert(getScheduled - getBegin, TimeUnit.NANOSECONDS).toDouble
-      if (this.queueTimeMetric != null) try this.queueTimeMetric.addOrUpdate(this.queueTimeMetricDimensionValues, queueTime)
+      if (this.queueTimeMetric != null) try this.queueTimeMetric.addOrUpdate(this.queueTimeMetricDimensionValues.toList, queueTime)
       catch {
         case e: Exception =>
           RestJob.logger.error("Failed to update frontend metric QueueTime: ", e)

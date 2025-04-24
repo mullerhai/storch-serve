@@ -1,19 +1,15 @@
 package org.pytorch.serve.archive.model.s3
 
-import java.io.File
-import java.io.IOException
-import java.io.UnsupportedEncodingException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
+import org.apache.commons.io.FileUtils
+import org.pytorch.serve.archive.model.s3.*
+import org.pytorch.serve.archive.utils.{ArchiveUtils, InvalidArchiveURLException}
+import org.slf4j.{Logger, LoggerFactory}
+
+import java.io.{File, IOException, UnsupportedEncodingException}
+import java.net.{HttpURLConnection, URL, URLEncoder}
 import java.nio.file.FileAlreadyExistsException
 import java.util
-import org.apache.commons.io.FileUtils
-import org.pytorch.serve.archive.utils.ArchiveUtils
-import org.pytorch.serve.archive.utils.InvalidArchiveURLException
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import org.pytorch.serve.archive.model.s3._
+import scala.collection.mutable.{ListBuffer, TreeMap, Map as MutableMap}
 
 case class HttpUtils()
 /** Various Http helper routines */
@@ -24,7 +20,7 @@ object HttpUtils {
   @throws[FileAlreadyExistsException]
   @throws[IOException]
   @throws[InvalidArchiveURLException]
-  def copyURLToFile(allowedUrls: util.List[String], 
+  def copyURLToFile(allowedUrls: List[String],
                     url: String, 
                     modelLocation: File, 
                     s3SseKmsEnabled: Boolean, 
@@ -33,15 +29,15 @@ object HttpUtils {
       if (modelLocation.exists) throw new FileAlreadyExistsException(archiveName)
       if (archiveName.contains("/") || archiveName.contains("\\")) throw new IOException("Security alert slash or backslash appear in archiveName:" + archiveName)
       // for a simple GET, we have no body so supply the precomputed 'empty' hash
-      var headers: util.Map[String, String] = null
+      var headers = MutableMap[String, String]()
       if (s3SseKmsEnabled) {
         val awsAccessKey = System.getenv("AWS_ACCESS_KEY_ID")
         val awsSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY")
         val regionName = System.getenv("AWS_DEFAULT_REGION")
         if (regionName.isEmpty || awsAccessKey.isEmpty || awsSecretKey.isEmpty) throw new IOException("Miss environment variables " + "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY or AWS_DEFAULT_REGION")
         val connection = new URL(url).openConnection.asInstanceOf[HttpURLConnection]
-        headers = new util.HashMap[String, String]
-        headers.put("x-amz-content-sha256", AWS4SignerBase.EMPTY_BODY_SHA256)
+        //        headers = new MutableMap[String, String]()
+        headers += ("x-amz-content-sha256" -> AWS4SignerBase.EMPTY_BODY_SHA256)
         val signer = new AWS4SignerForAuthorizationHeader(connection.getURL, "GET", "s3", regionName)
         val authorization = signer.computeSignature(headers, null, // no query parameters
           AWS4SignerBase.EMPTY_BODY_SHA256, awsAccessKey, awsSecretKey)
@@ -61,14 +57,14 @@ object HttpUtils {
   }
 
   @throws[IOException]
-  def setHttpConnection(connection: HttpURLConnection, 
-                        httpMethod: String, 
-                        headers: util.Map[String, String]): Unit = {
+  def setHttpConnection(connection: HttpURLConnection,
+                        httpMethod: String,
+                        headers: MutableMap[String, String]): Unit = {
     connection.setRequestMethod(httpMethod)
     if (headers != null) {
-      import scala.jdk.CollectionConverters._
-      for (headerKey <- headers.keySet.asScala) {
-        connection.setRequestProperty(headerKey, headers.get(headerKey))
+      import scala.jdk.CollectionConverters.*
+      for (headerKey <- headers.keySet) {
+        if headers.get(headerKey).isDefined then connection.setRequestProperty(headerKey, headers.get(headerKey).get)
       }
     }
   }

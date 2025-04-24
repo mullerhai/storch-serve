@@ -1,10 +1,10 @@
 package org.pytorch.serve.device.utils
 
+import org.pytorch.serve.device.interfaces.{IAcceleratorUtility, ICsvSmiParser}
+import org.pytorch.serve.device.{Accelerator, AcceleratorVendor}
+
 import java.util
-import org.pytorch.serve.device.Accelerator
-import org.pytorch.serve.device.AcceleratorVendor
-import org.pytorch.serve.device.interfaces.IAcceleratorUtility
-import org.pytorch.serve.device.interfaces.ICsvSmiParser
+import scala.collection.mutable
 
 class CudaUtil extends IAcceleratorUtility with ICsvSmiParser {
   override def getGpuEnvVariableName = "CUDA_VISIBLE_DEVICES"
@@ -14,13 +14,13 @@ class CudaUtil extends IAcceleratorUtility with ICsvSmiParser {
     Array[String]("nvidia-smi", "--query-gpu=" + metrics, "--format=csv,nounits")
   }
 
-  override def getAvailableAccelerators(availableAcceleratorIds: util.LinkedHashSet[Integer]): util.ArrayList[Accelerator] = {
+  override def getAvailableAccelerators(availableAcceleratorIds: mutable.LinkedHashSet[Integer]): List[Accelerator] = {
     val command = Array("nvidia-smi", "--query-gpu=index,gpu_name", "--format=csv,nounits")
     val smiOutput = IAcceleratorUtility.callSMI(command)
     csvSmiOutputToAccelerators(smiOutput, availableAcceleratorIds, this.parseAccelerator)
   }
 
-  override def smiOutputToUpdatedAccelerators(smiOutput: String, parsedGpuIds: util.LinkedHashSet[Integer]): util.ArrayList[Accelerator] = csvSmiOutputToAccelerators(smiOutput, parsedGpuIds, this.parseUpdatedAccelerator)
+  override def smiOutputToUpdatedAccelerators(smiOutput: String, parsedGpuIds: mutable.LinkedHashSet[Integer]): List[Accelerator] = csvSmiOutputToAccelerators(smiOutput, parsedGpuIds, this.parseUpdatedAccelerator)
 
   def parseAccelerator(parts: Array[String]): Accelerator = {
     val id = parts(0).trim.toInt

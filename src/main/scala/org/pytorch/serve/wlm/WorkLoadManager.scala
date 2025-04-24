@@ -1,25 +1,20 @@
 package org.pytorch.serve.wlm
 
 import io.netty.channel.EventLoopGroup
+import org.pytorch.serve.snapshot.SnapshotManager
+import org.pytorch.serve.util.{ConfigManager, OSUtils}
+import org.pytorch.serve.wlm.{AsyncBatchAggregator, AsyncWorkerThread, ContinuousBatching, ModelVersionName, SequenceBatching, SequenceContinuousBatching, WorkerStateListener}
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.util
 import java.util.Collections
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicInteger
-import org.pytorch.serve.snapshot.SnapshotManager
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.OSUtils
-import org.pytorch.serve.wlm.{AsyncBatchAggregator, AsyncWorkerThread, ContinuousBatching, ModelVersionName, SequenceBatching, SequenceContinuousBatching, WorkerStateListener}
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import org.pytorch.serve.util.ConfigManager
-
+import scala.collection.concurrent.TrieMap
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 
 object WorkLoadManager {
@@ -29,27 +24,28 @@ object WorkLoadManager {
 class WorkLoadManager(private var configManager: ConfigManager, private var backendGroup: EventLoopGroup) {
   
   private var threadPool: ExecutorService =  Executors.newCachedThreadPool
-  private var workers: ConcurrentHashMap[ModelVersionName, util.List[WorkerThread]] = new ConcurrentHashMap[ModelVersionName, util.List[WorkerThread]]
+  private var workers: TrieMap[ModelVersionName, List[WorkerThread]] = new TrieMap[ModelVersionName, List[WorkerThread]]
   private var port: AtomicInteger = new AtomicInteger(configManager.getInitialWorkerPort)
   private var distributionPort: AtomicInteger = new AtomicInteger(configManager.getInitialDistributionPort)
   private var gpuCounter: AtomicInteger = new AtomicInteger(0)
 
-  def getWorkers(modelVersionName: ModelVersionName): util.List[WorkerThread] = {
+  def getWorkers(modelVersionName: ModelVersionName): List[WorkerThread] = {
     val list = workers.get(modelVersionName)
-    if (list == null) return Collections.emptyList
-    new util.ArrayList[WorkerThread](list)
+    if (list.isEmpty) return List.empty // Collections.emptyList
+    list.get
+    //    new util.ArrayList[WorkerThread](list)
   }
 
-  def getWorkers: util.Map[Integer, WorkerThread] = {
-    val map = new util.HashMap[Integer, WorkerThread]
+  def getWorkers: Map[Integer, WorkerThread] = {
+    val map = new mutable.HashMap[Integer, WorkerThread]
 //    import scala.collection.JavaConversions._
-    for (workerThreads <- workers.values.asScala) {
+    for (workerThreads <- workers.values) {
 //      import scala.collection.JavaConversions._
-      for (worker <- workerThreads.asScala) {
+      for (worker <- workerThreads) {
         map.put(worker.getPid, worker)
       }
     }
-    map
+    map.toMap
   }
 
   def hasNoWorker(modelVersionName: ModelVersionName): Boolean = {
@@ -60,10 +56,10 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
 
   def getNumRunningWorkers(modelVersionName: ModelVersionName): Int = {
     var numWorking = 0
-    val threads = workers.getOrDefault(modelVersionName, null)
+    val threads = workers.getOrElse(modelVersionName, null)
     if (threads != null) {
 //      import scala.collection.JavaConversions._
-      for (thread <- threads.asScala) {
+      for (thread <- threads) {
         if ((thread.getState ne WorkerState.WORKER_STOPPED) && (thread.getState ne WorkerState.WORKER_ERROR) && (thread.getState ne WorkerState.WORKER_SCALED_DOWN)) numWorking += 1
       }
     }
@@ -72,10 +68,10 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
 
   def getNumHealthyWorkers(modelVersionName: ModelVersionName): Int = {
     var numHealthy = 0
-    val threads = workers.getOrDefault(modelVersionName, null)
+    val threads = workers.getOrElse(modelVersionName, null)
     if (threads != null) {
 //      import scala.collection.JavaConversions._
-      for (thread <- threads.asScala) {
+      for (thread <- threads) {
         if (thread.isHealthy) numHealthy += 1
       }
     }
@@ -98,16 +94,20 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
     var maxWorker = model.getMaxWorkers
     // Sets restartNumWorkers to the updated minWorker after scale up/down
     val restartNumWorkers = minWorker
-    var threads: util.List[WorkerThread] = null
+    var threads: ListBuffer[WorkerThread] = new ListBuffer[WorkerThread]()
     if (minWorker == 0) {
-      threads = workers.remove(model.getModelVersionName)
+      threads ++= workers.remove(model.getModelVersionName).get
       if (threads == null) {
         future.complete(HttpURLConnection.HTTP_OK)
         if (!isStartup && !isCleanUp && !model.isWorkflowModel) SnapshotManager.getInstance.saveSnapshot()
         return future
       }
     }
-    else threads = workers.computeIfAbsent(model.getModelVersionName, (k: ModelVersionName) => new util.ArrayList[WorkerThread])
+    else {
+      val workthread = workers.getOrElseUpdate(model.getModelVersionName, List.empty[WorkerThread])
+      threads.clear()
+      threads.appendAll(workthread)
+    }
     val currentWorkers = threads.size
     val isRestartWorkers = isLauncherRestartWorkers(currentWorkers)
     if (isRestartWorkers) {
@@ -128,7 +128,7 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
         if (workerProcess != null && workerProcess.isAlive) {
           var workerDestroyed = false
           try {
-            val cmd = String.format(OSUtils.getKillCmd, workerProcess.pid)
+            val cmd = String.format(OSUtils.getKillCmd, workerProcess.pid())
             val workerKillProcess = Runtime.getRuntime.exec(cmd, null, null)
             workerDestroyed = workerKillProcess.waitFor(configManager.getUnregisterModelTimeout, TimeUnit.SECONDS)
           } catch {
@@ -159,7 +159,7 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
     return future
   }
 
-  private def addThreads(threads: util.List[WorkerThread], model: Model, count: Int, future: CompletableFuture[Integer]): Unit = {
+  private def addThreads(threads: ListBuffer[WorkerThread], model: Model, count: Int, future: CompletableFuture[Integer]): Unit = {
     val listener = new WorkerStateListener(future, count)
     val maxGpu = model.getNumCores
     val stride = if (model.getParallelLevel > 0) model.getParallelLevel
@@ -168,7 +168,7 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
       var gpuId = -1
       if (maxGpu > 0) if (model.isHasCfgDeviceIds || model.getParallelLevel > 0) {
         gpuId = model.getGpuCounter.getAndAccumulate(stride, (prev: Int, myStride: Int) => (prev + myStride) % maxGpu)
-        if (model.getParallelLevel == 0) gpuId = model.getDeviceIds.get(gpuId)
+        if (model.getParallelLevel == 0) gpuId = model.getDeviceIds(gpuId)
       }
       else gpuId = gpuCounter.accumulateAndGet(maxGpu, (prev: Int, maxGpuId: Int) => {
         
@@ -187,7 +187,7 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
       var thread: WorkerThread = null
       if (model.isAsyncCommunication) thread = new AsyncWorkerThread(configManager, backendGroup, currentPort, gpuId, model, aggregator, listener)
       else thread = new WorkerThread(configManager, backendGroup, currentPort, gpuId, model, aggregator, listener)
-      threads.add(thread)
+      threads.append(thread)
       threadPool.submit(thread)
     }
   }

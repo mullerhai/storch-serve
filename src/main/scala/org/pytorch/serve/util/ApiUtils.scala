@@ -2,78 +2,64 @@ package org.pytorch.serve.util
 
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.HttpResponseStatus
+import org.pytorch.serve.archive.DownloadArchiveException
+import org.pytorch.serve.archive.model.{Manifest, ModelArchive, ModelException, ModelNotFoundException, ModelVersionNotFoundException}
+import org.pytorch.serve.archive.utils.ArchiveUtils
+import org.pytorch.serve.http.*
+import org.pytorch.serve.http.messages.{DescribeModelResponse, ListModelsResponse, RegisterModelRequest}
+import org.pytorch.serve.job.RestJob
+import org.pytorch.serve.snapshot.SnapshotManager
+import org.pytorch.serve.util.messages.{RequestInput, WorkerCommands}
+import org.pytorch.serve.wlm.*
+
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.nio.file.FileAlreadyExistsException
 import java.util
 import java.util.Collections
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ExecutionException
+import java.util.concurrent.{CompletableFuture, ExecutionException}
 import java.util.function.Function
-import org.pytorch.serve.archive.DownloadArchiveException
-import org.pytorch.serve.archive.model.Manifest
-import org.pytorch.serve.archive.model.ModelArchive
-import org.pytorch.serve.archive.model.ModelException
-import org.pytorch.serve.archive.model.ModelNotFoundException
-import org.pytorch.serve.archive.model.ModelVersionNotFoundException
-import org.pytorch.serve.archive.utils.ArchiveUtils
-import org.pytorch.serve.http.BadRequestException
-import org.pytorch.serve.http.InternalServerException
-import org.pytorch.serve.http.InvalidModelVersionException
-import org.pytorch.serve.http.RequestTimeoutException
-import org.pytorch.serve.http.ServiceUnavailableException
-import org.pytorch.serve.http.StatusResponse
-import org.pytorch.serve.http.messages.DescribeModelResponse
-import org.pytorch.serve.http.messages.ListModelsResponse
-import org.pytorch.serve.http.messages.RegisterModelRequest
-import org.pytorch.serve.job.RestJob
-import org.pytorch.serve.snapshot.SnapshotManager
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.util.messages.WorkerCommands
-import org.pytorch.serve.wlm.Model
-import org.pytorch.serve.wlm.ModelManager
-import org.pytorch.serve.wlm.ModelVersionedRefs
-import org.pytorch.serve.wlm.WorkerInitializationException
-import org.pytorch.serve.wlm.WorkerState
-import org.pytorch.serve.wlm.WorkerThread
-import scala.jdk.CollectionConverters._
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 object ApiUtils {
   def getModelList(limitTmp: Int, pageTokenTmp: Int): ListModelsResponse = {
     val limit = if (limitTmp > 100 || limitTmp < 0) then 100 else limitTmp
     val pageToken = if (pageTokenTmp < 0) then 0 else pageTokenTmp
     val models = ModelManager.getInstance.getDefaultModels(true)
-    val keys = new util.ArrayList[String](models.keySet)
-    Collections.sort(keys)
+    val keys = new ListBuffer[String]() //models.keySet)
+    models.keySet.map(ele => keys.append(ele))
+    //    Collections.sort(keys)
+    keys.sorted
     val list = new ListModelsResponse
     var last = pageToken + limit
     if (last > keys.size) last = keys.size
     else list.setNextPageToken(String.valueOf(last))
     for (i <- pageToken until last) {
-      val modelName = keys.get(i)
+      val modelName = keys(i)
       val model = models.get(modelName)
-      list.addModel(modelName, model.getModelUrl)
+      if model.isDefined then list.addModel(modelName, model.get.getModelUrl)
     }
     list
   }
 
   @throws[ModelNotFoundException]
   @throws[ModelVersionNotFoundException]
-  def getModelDescription(modelName: String, modelVersion: String): util.ArrayList[DescribeModelResponse] = {
+  def getModelDescription(modelName: String, modelVersion: String): List[DescribeModelResponse] = {
     val modelManager = ModelManager.getInstance
-    val resp = new util.ArrayList[DescribeModelResponse]
+    val resp = new ListBuffer[DescribeModelResponse]
     if ("all" == modelVersion) {
 //      import scala.collection.JavaConversions._
-      for (m <- modelManager.getAllModelVersions(modelName).asScala) {
-        resp.add(createModelResponse(modelManager, modelName, m.getValue))
+      for (m <- modelManager.getAllModelVersions(modelName)) {
+        resp.append(createModelResponse(modelManager, modelName, m._2))
       }
     }
     else {
       val model = modelManager.getModel(modelName, modelVersion)
       if (model == null) throw new ModelNotFoundException("Model not found: " + modelName)
-      resp.add(createModelResponse(modelManager, modelName, model))
+      resp.append(createModelResponse(modelManager, modelName, model))
     }
-    resp
+    resp.toList
   }
 
   @throws[ModelNotFoundException]
@@ -157,6 +143,69 @@ object ApiUtils {
     })
   }
 
+  private def createModelResponse(modelManager: ModelManager, modelName: String, model: Model) = {
+    val resp = new DescribeModelResponse
+    resp.setModelName(modelName)
+    resp.setModelUrl(model.getModelUrl)
+    resp.setBatchSize(model.getBatchSize)
+    resp.setMaxBatchDelay(model.getMaxBatchDelay.toInt)
+    resp.setMaxWorkers(model.getMaxWorkers)
+    resp.setMinWorkers(model.getMinWorkers)
+    resp.setLoadedAtStartup(modelManager.getStartupModels.contains(modelName))
+    val manifest = model.getModelArchive.getManifest
+    resp.setModelVersion(manifest.getModel.getModelVersion)
+    resp.setRuntime(manifest.getRuntime.toString)
+    resp.setResponseTimeout(model.getResponseTimeout)
+    resp.setStartupTimeout(model.getStartupTimeout)
+    resp.setMaxRetryTimeoutInSec(model.getMaxRetryTimeoutInMill / 1000)
+    resp.setClientTimeoutInMills(model.getClientTimeoutInMills)
+    resp.setParallelType(model.getParallelType.toString)
+    resp.setParallelLevel(model.getParallelLevel)
+    resp.setDeviceType(model.getDeviceType.toString)
+    resp.setDeviceIds(model.getDeviceIds)
+    resp.setContinuousBatching(model.isContinuousBatching)
+    resp.setUseJobTicket(model.isUseJobTicket)
+    resp.setUseVenv(model.isUseVenv)
+    resp.setStateful(model.isSequenceBatching)
+    resp.setSequenceMaxIdleMSec(model.getSequenceMaxIdleMSec)
+    resp.setSequenceTimeoutMSec(model.getSequenceTimeoutMSec)
+    resp.setMaxNumSequence(model.getMaxNumSequence)
+    resp.setMaxSequenceJobQueueSize(model.getMaxSequenceJobQueueSize)
+    val workers = modelManager.getWorkers(model.getModelVersionName)
+    for (worker <- workers) {
+      val workerId = worker.getWorkerId
+      val startTime = worker.getStartTime
+      val isRunning = worker.isRunning && (worker.getState eq WorkerState.WORKER_MODEL_LOADED)
+      val gpuId = worker.getGpuId
+      val memory = worker.getMemory
+      val pid = worker.getPid
+      val gpuUsage = worker.getGpuUsage
+      resp.addWorker(workerId, startTime, isRunning, gpuId, memory, pid, gpuUsage)
+    }
+    val jobQueueStatus = new DescribeModelResponse.JobQueueStatus
+    jobQueueStatus.setRemainingCapacity(model.getJobQueueRemainingCapacity)
+    jobQueueStatus.setPendingRequests(model.getPendingRequestsInJobQueue)
+    resp.setJobQueueStatus(jobQueueStatus)
+    resp
+  }
+
+  @throws[ModelNotFoundException]
+  @throws[ModelVersionNotFoundException]
+  def unregisterModel(modelName: String, modelVersion: String): Unit = {
+    val modelManager = ModelManager.getInstance
+    val httpResponseStatus = modelManager.unregisterModel(modelName, modelVersion)
+    if (httpResponseStatus == HttpResponseStatus.NOT_FOUND.code) throw new ModelNotFoundException("Model not found: " + modelName)
+    else if (httpResponseStatus == HttpResponseStatus.BAD_REQUEST.code) throw new ModelVersionNotFoundException(String.format("Model version: %s does not exist for model: %s", modelVersion, modelName))
+    else if (httpResponseStatus == HttpResponseStatus.INTERNAL_SERVER_ERROR.code) throw new InternalServerException("Interrupted while cleaning resources: " + modelName)
+    else if (httpResponseStatus == HttpResponseStatus.REQUEST_TIMEOUT.code) throw new RequestTimeoutException("Timed out while cleaning resources: " + modelName)
+    else if (httpResponseStatus == HttpResponseStatus.FORBIDDEN.code) throw new InvalidModelVersionException("Cannot remove default version for model " + modelName)
+  }
+
+  def getTorchServeHealth(r: Runnable): Unit = {
+    val modelManager = ModelManager.getInstance
+    modelManager.submitTask(r)
+  }
+
   @throws[ModelVersionNotFoundException]
   @throws[ModelNotFoundException]
   @throws[ExecutionException]
@@ -165,7 +214,7 @@ object ApiUtils {
   def updateModelWorkers(modelName: String, modelVersion: String, minWorkers: Int, maxWorkers: Int, synchronous: Boolean, isInit: Boolean, onError: Function[Void, Void]): StatusResponse = {
     val modelManager = ModelManager.getInstance
     if (maxWorkers < minWorkers) throw new BadRequestException("max_worker cannot be less than min_worker.")
-    if (!modelManager.getDefaultModels.containsKey(modelName)) throw new ModelNotFoundException("Model not found: " + modelName)
+    if (!modelManager.getDefaultModels.contains(modelName)) throw new ModelNotFoundException("Model not found: " + modelName)
     val future = modelManager.updateModel(modelName, modelVersion, minWorkers, maxWorkers)
     val statusResponse = new StatusResponse
     if (!synchronous) return new StatusResponse("Processing worker updates...", HttpURLConnection.HTTP_ACCEPTED)
@@ -200,32 +249,14 @@ object ApiUtils {
     statusResponseCompletableFuture.get
   }
 
-  @throws[ModelNotFoundException]
-  @throws[ModelVersionNotFoundException]
-  def unregisterModel(modelName: String, modelVersion: String): Unit = {
-    val modelManager = ModelManager.getInstance
-    val httpResponseStatus = modelManager.unregisterModel(modelName, modelVersion)
-    if (httpResponseStatus == HttpResponseStatus.NOT_FOUND.code) throw new ModelNotFoundException("Model not found: " + modelName)
-    else if (httpResponseStatus == HttpResponseStatus.BAD_REQUEST.code) throw new ModelVersionNotFoundException(String.format("Model version: %s does not exist for model: %s", modelVersion, modelName))
-    else if (httpResponseStatus == HttpResponseStatus.INTERNAL_SERVER_ERROR.code) throw new InternalServerException("Interrupted while cleaning resources: " + modelName)
-    else if (httpResponseStatus == HttpResponseStatus.REQUEST_TIMEOUT.code) throw new RequestTimeoutException("Timed out while cleaning resources: " + modelName)
-    else if (httpResponseStatus == HttpResponseStatus.FORBIDDEN.code) throw new InvalidModelVersionException("Cannot remove default version for model " + modelName)
-  }
-
-  def getTorchServeHealth(r: Runnable): Unit = {
-    val modelManager = ModelManager.getInstance
-    modelManager.submitTask(r)
-  }
-
   def getWorkerStatus: String = {
     val modelManager = ModelManager.getInstance
     var response = "Healthy"
     var numWorking = 0
     var numScaled = 0
-//    import scala.collection.JavaConversions._
-    for (m <- modelManager.getAllModels.asScala) {
-      numScaled += m.getValue.getDefaultModel.getMinWorkers
-      numWorking += modelManager.getNumRunningWorkers(m.getValue.getDefaultModel.getModelVersionName)
+    for (m <- modelManager.getAllModels.toSeq) {
+      numScaled += m._2.getDefaultModel.getMinWorkers
+      numWorking += modelManager.getNumRunningWorkers(m._2.getDefaultModel.getModelVersionName)
     }
     if ((numWorking > 0) && (numWorking < numScaled)) response = "Partial Healthy"
     else if ((numWorking == 0) && (numScaled > 0)) response = "Unhealthy"
@@ -239,60 +270,12 @@ object ApiUtils {
     val modelManager = ModelManager.getInstance
     var numHealthy = 0
     var numScaled = 0
-//    import scala.collection.JavaConversions._
-    for (m <- modelManager.getAllModels.asScala) {
-      numScaled = m.getValue.getDefaultModel.getMinWorkers
-      numHealthy = modelManager.getNumHealthyWorkers(m.getValue.getDefaultModel.getModelVersionName)
+    for (m <- modelManager.getAllModels.toSeq) {
+      numScaled = m._2.getDefaultModel.getMinWorkers
+      numHealthy = modelManager.getNumHealthyWorkers(m._2.getDefaultModel.getModelVersionName)
       if (numHealthy < numScaled) return false
     }
     true
-  }
-
-  private def createModelResponse(modelManager: ModelManager, modelName: String, model: Model) = {
-    val resp = new DescribeModelResponse
-    resp.setModelName(modelName)
-    resp.setModelUrl(model.getModelUrl)
-    resp.setBatchSize(model.getBatchSize)
-    resp.setMaxBatchDelay(model.getMaxBatchDelay.toInt)
-    resp.setMaxWorkers(model.getMaxWorkers)
-    resp.setMinWorkers(model.getMinWorkers)
-    resp.setLoadedAtStartup(modelManager.getStartupModels.contains(modelName))
-    val manifest = model.getModelArchive.getManifest
-    resp.setModelVersion(manifest.getModel.getModelVersion)
-    resp.setRuntime(manifest.getRuntime.toString)
-    resp.setResponseTimeout(model.getResponseTimeout)
-    resp.setStartupTimeout(model.getStartupTimeout)
-    resp.setMaxRetryTimeoutInSec(model.getMaxRetryTimeoutInMill / 1000)
-    resp.setClientTimeoutInMills(model.getClientTimeoutInMills)
-    resp.setParallelType(model.getParallelType.toString)
-    resp.setParallelLevel(model.getParallelLevel)
-    resp.setDeviceType(model.getDeviceType.toString)
-    resp.setDeviceIds(model.getDeviceIds)
-    resp.setContinuousBatching(model.isContinuousBatching)
-    resp.setUseJobTicket(model.isUseJobTicket)
-    resp.setUseVenv(model.isUseVenv)
-    resp.setStateful(model.isSequenceBatching)
-    resp.setSequenceMaxIdleMSec(model.getSequenceMaxIdleMSec)
-    resp.setSequenceTimeoutMSec(model.getSequenceTimeoutMSec)
-    resp.setMaxNumSequence(model.getMaxNumSequence)
-    resp.setMaxSequenceJobQueueSize(model.getMaxSequenceJobQueueSize)
-    val workers = modelManager.getWorkers(model.getModelVersionName)
-//    import scala.collection.JavaConversions._
-    for (worker <- workers.asScala) {
-      val workerId = worker.getWorkerId
-      val startTime = worker.getStartTime
-      val isRunning = worker.isRunning && (worker.getState eq WorkerState.WORKER_MODEL_LOADED)
-      val gpuId = worker.getGpuId
-      val memory = worker.getMemory
-      val pid = worker.getPid
-      val gpuUsage = worker.getGpuUsage
-      resp.addWorker(workerId, startTime, isRunning, gpuId, memory, pid, gpuUsage)
-    }
-    val jobQueueStatus = new DescribeModelResponse.JobQueueStatus
-    jobQueueStatus.setRemainingCapacity(model.getJobQueueRemainingCapacity)
-    jobQueueStatus.setPendingRequests(model.getPendingRequestsInJobQueue)
-    resp.setJobQueueStatus(jobQueueStatus)
-    resp
   }
 
   @throws[ModelNotFoundException]

@@ -1,21 +1,24 @@
 package org.pytorch.serve.openapi
 
 import com.google.gson.annotations.SerializedName
+
 import java.util
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 class Schema {
   private var `type`: String = null
   private var format: String = null
   private var name: String = null
-  private var required: util.List[String] = null
-  private var properties: util.Map[String, Schema] = null
+  private var required: ListBuffer[String] = new ListBuffer[String]
+  private var properties: mutable.Map[String, Schema] = mutable.Map.empty
   private var items: Schema = null
   private var description: String = null
   private var example: AnyRef = null
   private var additionalProperties: Schema = null
   private var discriminator: String = null
-  @SerializedName("enum") 
-  private var enumeration:util.ArrayList[String] = null
+  @SerializedName("enum")
+  private var enumeration: ListBuffer[String] = new ListBuffer[String]
   @SerializedName("default") 
   private var defaultValue: String = null
 
@@ -52,24 +55,24 @@ class Schema {
     this.name = name
   }
 
-  def getRequired: util.List[String] = required
+  def getRequired: List[String] = required.toList
 
-  def setRequired(required: util.List[String]): Unit = {
-    this.required = required
+  def setRequired(required: List[String]): Unit = {
+    this.required.appendAll(required)
   }
 
-  def getProperties: util.Map[String, Schema] = properties
+  def getProperties: Map[String, Schema] = properties.toMap
 
-  def setProperties(properties: util.Map[String, Schema]): Unit = {
-    this.properties = properties
+  def setProperties(properties: Map[String, Schema]): Unit = {
+    this.properties ++= properties
   }
 
   def addProperty(key: String, schema: Schema, requiredProperty: Boolean): Unit = {
-    if (properties == null) properties = new util.LinkedHashMap[String, Schema]
+    if (properties == null) properties = new mutable.LinkedHashMap[String, Schema]
     properties.put(key, schema)
     if (requiredProperty) {
-      if (required == null) required = new util.ArrayList[String]
-      required.add(key)
+      if (required == null) required = new ListBuffer[String]()
+      required.append(key)
     }
   }
 
@@ -103,10 +106,10 @@ class Schema {
     this.discriminator = discriminator
   }
 
-  def getEnumeration: util.List[String] = enumeration
+  def getEnumeration: List[String] = enumeration.toList
 
-  def setEnumeration(enumeration: util.ArrayList[String]): Unit = {
-    this.enumeration = enumeration
+  def setEnumeration(enumeration: List[String]): Unit = {
+    this.enumeration.appendAll(enumeration)
   }
 
   def getDefaultValue: String = defaultValue

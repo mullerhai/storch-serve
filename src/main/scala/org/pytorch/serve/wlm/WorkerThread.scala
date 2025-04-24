@@ -1,40 +1,26 @@
 package org.pytorch.serve.wlm
 
-import scala.jdk.CollectionConverters.*
 import io.netty.bootstrap.Bootstrap
-import io.netty.channel.{Channel, ChannelFuture, ChannelFutureListener, ChannelHandler, ChannelHandlerContext, ChannelInitializer, ChannelPipeline, EventLoopGroup, SimpleChannelInboundHandler}
+import io.netty.channel.*
+import org.pytorch.serve.device.Accelerator
+import org.pytorch.serve.job.{Job, RestJob}
+import org.pytorch.serve.metrics.{IMetric, MetricCache}
+import org.pytorch.serve.util.codec.{ModelRequestEncoder, ModelResponseDecoder}
+import org.pytorch.serve.util.messages.*
+import org.pytorch.serve.util.messages.WorkerCommands.*
+import org.pytorch.serve.util.{ConfigManager, Connector}
+import org.pytorch.serve.wlm.{ModelManager, WorkerInitializationException, WorkerLifeCycle, WorkerState}
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.SocketAddress
+import java.net.{HttpURLConnection, SocketAddress}
 import java.util
 import java.util.UUID
-import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
+import java.util.concurrent.{ArrayBlockingQueue, CompletableFuture, CountDownLatch, TimeUnit}
 import java.util.stream.Collectors
-import org.pytorch.serve.device.Accelerator
-import org.pytorch.serve.job.Job
-import org.pytorch.serve.job.RestJob
-import org.pytorch.serve.metrics.IMetric
-import org.pytorch.serve.metrics.MetricCache
-import org.pytorch.serve.util.ConfigManager
-import org.pytorch.serve.util.Connector
-import org.pytorch.serve.util.codec.ModelRequestEncoder
-import org.pytorch.serve.util.codec.ModelResponseDecoder
-import org.pytorch.serve.util.messages.BaseModelRequest
-import org.pytorch.serve.util.messages.InputParameter
-import org.pytorch.serve.util.messages.ModelWorkerResponse
-import org.pytorch.serve.util.messages.RequestInput
-import org.pytorch.serve.util.messages.WorkerCommands
-import org.pytorch.serve.util.messages.WorkerCommands.{DESCRIBE, LOAD, PREDICT, STATS, STREAMPREDICT, STREAMPREDICT2, UNLOAD}
-import org.pytorch.serve.wlm.{ModelManager, WorkerInitializationException, WorkerLifeCycle, WorkerState}
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 import scala.util.control.Breaks.{break, breakable}
 
 
@@ -58,9 +44,9 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
 //  this.workerLoadTimeMetricDimensionValues = util.Arrays.asList(getWorkerName, "Host", ConfigManager.getInstance.getHostName)
   final protected var workerThreadTimeMetric: IMetric = MetricCache.getInstance.getMetricFrontend("WorkerThreadTime")
   final protected var workerLoadTimeMetric: IMetric = MetricCache.getInstance.getMetricFrontend("WorkerLoadTime")
-  final protected var workerThreadTimeMetricDimensionValues: util.List[String] = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName)
-  final protected var workerLoadTimeMetricDimensionValues: util.List[String] = util.Arrays.asList(getWorkerName, "Host", ConfigManager.getInstance.getHostName)
-  protected var backendChannel = new util.ArrayList[Channel]
+  final protected var workerThreadTimeMetricDimensionValues: List[String] = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName).asScala.toList
+  final protected var workerLoadTimeMetricDimensionValues: List[String] = util.Arrays.asList(getWorkerName, "Host", ConfigManager.getInstance.getHostName).asScala.toList
+  protected var backendChannel = new ListBuffer[Channel]
   protected var running = new AtomicBoolean(true)
   protected var backoffIdx = 0
   protected var replies: ArrayBlockingQueue[ModelWorkerResponse] = new ArrayBlockingQueue[ModelWorkerResponse](if (model.getParallelLevel > 0) model.getParallelLevel
@@ -82,7 +68,7 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
     val gpuUsage = new StringBuffer
     if (gpuId >= 0) try {
       configManager.systemInfo.updateAcceleratorMetrics()
-      val accelerator = this.configManager.systemInfo.getAccelerators.get(gpuId)
+      val accelerator = this.configManager.systemInfo.getAccelerators(gpuId)
       return accelerator.utilizationToString
     } catch {
       case e: Exception =>
@@ -114,12 +100,13 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
         val wtStartTime = System.currentTimeMillis
         val repeats = getRepeats(workerCmd)
         WorkerThread.logger.debug("Flushing req.cmd {} repeats {} to backend at: {}", workerCmd, repeats, wtStartTime)
-        val futureRequests = new util.ArrayList[CompletableFuture[Void]](repeats)
+        val futureRequests = new ListBuffer[CompletableFuture[Void]] //(repeats)
+
         var i = 0
         while (backendChannel.size > 0 && i < repeats) {
           val idx = i
-          futureRequests.add(CompletableFuture.runAsync(() => {
-            try backendChannel.get(idx).writeAndFlush(req).sync
+          futureRequests.append(CompletableFuture.runAsync(() => {
+            try backendChannel(idx).writeAndFlush(req).sync
             catch {
               case e: InterruptedException =>
                 WorkerThread.logger.error("Failed to send request to backend", e)
@@ -127,7 +114,7 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
           }))
           i += 1
         }
-        futureRequests.stream.map(cf => cf.join() ) //CompletableFuture.join()
+        futureRequests.map(cf => cf.join()) //CompletableFuture.join()
         var reply: ModelWorkerResponse = null
         var jobDone = false
         var totalDuration:Long = 0
@@ -190,7 +177,7 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
         }
         req = null
         val workerThreadTime = (System.currentTimeMillis - wtStartTime) - totalDuration
-        if (this.workerThreadTimeMetric != null) try this.workerThreadTimeMetric.addOrUpdate(this.workerThreadTimeMetricDimensionValues, workerThreadTime)
+        if (this.workerThreadTimeMetric != null) try this.workerThreadTimeMetric.addOrUpdate(this.workerThreadTimeMetricDimensionValues.toList, workerThreadTime)
         catch {
           case e: Exception =>
             WorkerThread.logger.error("Failed to update frontend metric WorkerThreadTime: ", e)
@@ -220,7 +207,7 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
       // reference
       // of the thread, currentThread.interrupt() might kill next worker.
       for (i <- 0 until backendChannel.size) {
-        backendChannel.get(i).disconnect
+        backendChannel(i).disconnect
       }
       backendChannel.clear()
       currentThread.set(null)
@@ -243,6 +230,8 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
   def setMemory(memory: Long): Unit = {
     this.memory = memory
   }
+
+  def isRunning: Boolean = running.get
 
   @throws[WorkerInitializationException]
   @throws[InterruptedException]
@@ -269,14 +258,14 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
         })
         val address = connector.getSocketAddress
         WorkerThread.logger.info("Connecting to: {}", address)
-        backendChannel.add(b.connect(address).sync.channel)
-        backendChannel.get(i).closeFuture.addListener((future: ChannelFuture) => {
+        backendChannel.append(b.connect(address).sync.channel)
+        backendChannel(i).closeFuture.addListener((future: ChannelFuture) => {
           latch.countDown()
           WorkerThread.logger.info("{} Worker disconnected. {}", getWorkerId, state)
           val thread = currentThread.getAndSet(null)
           if (thread != null) thread.interrupt()
         }.asInstanceOf[ChannelFutureListener])
-        backendChannel.get(i).newSucceededFuture.addListener((future: ChannelFuture) => {
+        backendChannel(i).newSucceededFuture.addListener((future: ChannelFuture) => {
 
           // TODO:
           // use gpu, batch size in load model command
@@ -300,20 +289,28 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
     }
   }
 
-  def isRunning: Boolean = running.get
+  protected def getDeviceIds: String = {
+    var deviceIds: ListBuffer[Int] = new ListBuffer[Int]()
+    if (gpuId == -1 || model.getParallelLevel == 0) null
+    else if (model.isHasCfgDeviceIds) model.getDeviceIds.slice(gpuId, gpuId + model.getParallelLevel).mkString(",") //.stream.map(String.valueOf).collect(Collectors.joining(","))
+    //    else if (model.isHasCfgDeviceIds) model.getDeviceIds.subList(gpuId, gpuId + model.getParallelLevel).stream.map(String.valueOf).collect(Collectors.joining(","))
+    else {
 
-  def getGpuId: Int = gpuId
-
-  def getStartTime: Long = startTime
-
-  def getPid: Int = lifeCycle.getPid
+      //      deviceIds = new util.ArrayList[Integer](model.getParallelLevel)
+      for (i <- gpuId until gpuId + model.getParallelLevel) {
+        deviceIds.append(i)
+      }
+      deviceIds.mkString(",")
+      //      deviceIds.map(String.valueOf).collect(Collectors.joining(","))
+    }
+  }
 
   def shutdown(): Unit = {
     running.set(false)
     aggregator.shutdown()
     setState(WorkerState.WORKER_SCALED_DOWN, HttpURLConnection.HTTP_OK)
     for (i <- 0 until backendChannel.size) {
-      if (backendChannel.get(i) != null) backendChannel.get(i).close
+      if (backendChannel(i) != null) backendChannel(i).close
     }
     backendChannel.clear()
     val thread = currentThread.getAndSet(null)
@@ -322,11 +319,6 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
       aggregator.sendError(null, "Worker scaled down.", HttpURLConnection.HTTP_INTERNAL_ERROR)
       model.removeJobQueue(workerId)
     }
-  }
-
-  protected def getWorkerName: String = {
-    val modelName = model.getModelVersionName.getVersionedModelName
-    "W-" + port + '-' + modelName
   }
 
   def setState(newState: WorkerState, status: Int): Unit = {
@@ -339,7 +331,7 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
       this.state = newState
     }
     if (state eq WorkerState.WORKER_MODEL_LOADED) {
-      if (this.workerLoadTimeMetric != null) try this.workerLoadTimeMetric.addOrUpdate(this.workerLoadTimeMetricDimensionValues, timeTaken)
+      if (this.workerLoadTimeMetric != null) try this.workerLoadTimeMetric.addOrUpdate(this.workerLoadTimeMetricDimensionValues.toList, timeTaken)
       catch {
         case e: Exception =>
           WorkerThread.logger.error("Failed to update frontend metric WorkerLoadTime: ", e)
@@ -356,6 +348,15 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
     else WorkerThread.logger.warn("Auto recovery failed again")
   }
 
+  protected def getWorkerName: String = {
+    val modelName = model.getModelVersionName.getVersionedModelName
+    "W-" + port + '-' + modelName
+  }
+
+  def getGpuId: Int = gpuId
+
+  def getStartTime: Long = startTime
+
   def retry(): Unit = {
     if (state eq WorkerState.WORKER_SCALED_DOWN) {
       WorkerThread.logger.debug("Worker terminated due to scale-down call.")
@@ -369,18 +370,7 @@ class WorkerThread(protected var configManager: ConfigManager, protected var bac
     WorkerThread.logger.info("Retry worker: {} in {} seconds.", workerId, WorkerThread.BACK_OFF(backoffIdx))
   }
 
-  protected def getDeviceIds: String = {
-    var deviceIds: util.List[Integer] = null
-    if (gpuId == -1 || model.getParallelLevel == 0) null
-    else if (model.isHasCfgDeviceIds) model.getDeviceIds.subList(gpuId, gpuId + model.getParallelLevel).stream.map(String.valueOf).collect(Collectors.joining(","))
-    else {
-      deviceIds = new util.ArrayList[Integer](model.getParallelLevel)
-      for (i <- gpuId until gpuId + model.getParallelLevel) {
-        deviceIds.add(i)
-      }
-      deviceIds.stream.map(String.valueOf).collect(Collectors.joining(","))
-    }
-  }
+  def getPid: Int = lifeCycle.getPid
 
   def isHealthy: Boolean = {
     if (recoveryStartTS == 0 || (System.currentTimeMillis - recoveryStartTS) < model.getMaxRetryTimeoutInMill) return true

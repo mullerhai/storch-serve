@@ -1,14 +1,16 @@
 package org.pytorch.serve.openapi
 
 import java.util
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 class Operation {
   private var summary: String = null
   private var description: String = null
   private var operationId: String = null
-  private var parameters = new util.ArrayList[Parameter]
+  private var parameters = new ListBuffer[Parameter]
   private var requestBody: RequestBody = null
-  private var responses: util.Map[String, Response] = null
+  private var responses: mutable.Map[String, Response] = null
   private var deprecated = false
 
   def this(operationId: String, description: String) ={
@@ -39,15 +41,15 @@ class Operation {
     this.operationId = operationId
   }
 
-  def getParameters: util.List[Parameter] = parameters
+  def getParameters: List[Parameter] = parameters.toList
 
-  def setParameters(parameters: util.ArrayList[Parameter]): Unit = {
-    this.parameters = parameters
+  def setParameters(parameters: List[Parameter]): Unit = {
+    this.parameters.appendAll(parameters)
   }
 
   def addParameter(parameter: Parameter): Unit = {
-    if (parameters == null) parameters = new util.ArrayList[Parameter]
-    parameters.add(parameter)
+    if (parameters == null) parameters = new ListBuffer[Parameter]
+    parameters.append(parameter)
   }
 
   def getRequestBody: RequestBody = requestBody
@@ -56,14 +58,15 @@ class Operation {
     this.requestBody = requestBody
   }
 
-  def getResponses: util.Map[String, Response] = responses
+  def getResponses: mutable.Map[String, Response] = responses
 
-  def setResponses(responses: util.Map[String, Response]): Unit = {
-    this.responses = responses
+  def setResponses(responses: Map[String, Response]): Unit = {
+    //    responses.toList.map((k,v) => this.responses.+=(k -> v))
+    this.responses.++=(responses)
   }
 
   def addResponse(response: Response): Unit = {
-    if (responses == null) responses = new util.LinkedHashMap[String, Response]
+    if (responses == null) responses = new mutable.LinkedHashMap[String, Response]
     responses.put(response.getCode, response)
   }
 

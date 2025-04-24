@@ -1,17 +1,12 @@
 package org.pytorch.serve.wlm
 
+import org.pytorch.serve.job.Job
+import org.pytorch.serve.util.messages.*
+import org.slf4j.{Logger, LoggerFactory}
+
 import java.util
 import java.util.concurrent.ExecutionException
-import org.pytorch.serve.job.Job
-import org.pytorch.serve.util.messages.BaseModelRequest
-import org.pytorch.serve.util.messages.ModelInferenceRequest
-import org.pytorch.serve.util.messages.ModelLoadModelRequest
-import org.pytorch.serve.util.messages.ModelWorkerResponse
-import org.pytorch.serve.util.messages.Predictions
-import org.pytorch.serve.util.messages.RequestInput
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters.*
 object ContinuousBatching {
   private val logger = LoggerFactory.getLogger(classOf[ContinuousBatching])
 }
@@ -27,8 +22,8 @@ class ContinuousBatching(model: Model) extends BatchAggregator(model) {
       model.decNumJobTickets
       return req
     }
-//    import scala.collection.JavaConversions._
-    for (j <- jobs.values.asScala) {
+
+    for (j <- jobs.values) {
       if (j.isControlCmd) {
         if (jobs.size > 1) throw new IllegalStateException("Received more than 1 control command. " + "Control messages should be processed/retrieved one at a time.")
         val input = j.getPayload
@@ -56,36 +51,36 @@ class ContinuousBatching(model: Model) extends BatchAggregator(model) {
     if (message.getCode == 200) {
       if (message.getPredictions.isEmpty) {
         // The jobs size is always 1 in the case control command
-//        import scala.collection.JavaConversions._
-        for (j <- jobs.entrySet.asScala) {
-          val job = j.getValue
+
+        for (j <- jobs.toList) {
+          val job = j._2
           if (job.isControlCmd) {
             cleanJobs()
             return true
           }
         }
       }
-//      import scala.collection.JavaConversions._
-      for (prediction <- message.getPredictions.asScala) {
+
+      for (prediction <- message.getPredictions) {
         val jobId = prediction.getRequestId
         val job = jobs.get(jobId)
         if (job == null) throw new IllegalStateException("Unexpected job in sendResponse() with 200 status code: " + jobId)
-        if (job.getPayload.getClientExpireTS > System.currentTimeMillis) job.response(prediction.getResp, prediction.getContentType, prediction.getStatusCode, prediction.getReasonPhrase, prediction.getHeaders)
-        else ContinuousBatching.logger.warn("Drop response for inference request {} due to client timeout", job.getPayload.getRequestId)
+        if (job.get.getPayload.getClientExpireTS > System.currentTimeMillis) job.get.response(prediction.getResp, prediction.getContentType, prediction.getStatusCode, prediction.getReasonPhrase, prediction.getHeaders)
+        else ContinuousBatching.logger.warn("Drop response for inference request {} due to client timeout", job.get.getPayload.getRequestId)
         val streamNext = prediction.getHeaders.get(org.pytorch.serve.util.messages.RequestInput.TS_STREAM_NEXT)
-        if (streamNext == null || (streamNext != null && streamNext == "false")) jobs.remove(jobId)
-        else if (!job.isOpen) {
-          jobs.remove(job.getJobId)
-          ContinuousBatching.logger.info("Connection to client got closed; Removing job: {}", job.getPayload.getRequestId)
+        if (streamNext == null || (streamNext.isDefined && streamNext.get == "false")) jobs.remove(jobId)
+        else if (!job.get.isOpen) {
+          jobs.remove(job.get.getJobId)
+          ContinuousBatching.logger.info("Connection to client got closed; Removing job: {}", job.get.getPayload.getRequestId)
         }
-        else job.getPayload.setCachedInBackend(true)
+        else job.get.getPayload.setCachedInBackend(true)
       }
     }
     else {
-//      import scala.collection.JavaConversions._
-      for (j <- jobs.entrySet.asScala) {
-        if (j.getValue == null) throw new IllegalStateException("Unexpected job in sendResponse() with non 200 status code: " + j.getKey)
-        val job = j.getValue
+
+      for (j <- jobs.toList) {
+        if (j._2 == null) throw new IllegalStateException("Unexpected job in sendResponse() with non 200 status code: " + j._1)
+        val job = j._2
         if (job.getPayload.getClientExpireTS > System.currentTimeMillis) job.sendError(message.getCode, message.getMessage)
         else ContinuousBatching.logger.warn("Drop error response for inference request {} due to client timeout", job.getPayload.getRequestId)
       }

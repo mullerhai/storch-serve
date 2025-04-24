@@ -1,43 +1,20 @@
 package org.pytorch.serve.util
 
-import io.netty.buffer.ByteBuf
-import io.netty.buffer.Unpooled
-import io.netty.channel.Channel
-import io.netty.channel.ChannelFuture
-import io.netty.channel.ChannelFutureListener
-import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.DefaultFullHttpResponse
-import io.netty.handler.codec.http.FullHttpResponse
-import io.netty.handler.codec.http.HttpHeaderNames
-import io.netty.handler.codec.http.HttpHeaderValues
-import io.netty.handler.codec.http.HttpHeaders
-import io.netty.handler.codec.http.HttpRequest
-import io.netty.handler.codec.http.HttpResponse
-import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.handler.codec.http.HttpUtil
-import io.netty.handler.codec.http.HttpVersion
-import io.netty.handler.codec.http.QueryStringDecoder
-import io.netty.handler.codec.http.multipart.Attribute
-import io.netty.handler.codec.http.multipart.FileUpload
-import io.netty.handler.codec.http.multipart.InterfaceHttpData
+import io.netty.buffer.{ByteBuf, Unpooled}
+import io.netty.channel.{Channel, ChannelFuture, ChannelFutureListener, ChannelHandlerContext}
+import io.netty.handler.codec.http.*
 import io.netty.handler.codec.http.multipart.InterfaceHttpData.HttpDataType
-
-import io.netty.util.AttributeKey
-import io.netty.util.CharsetUtil
+import io.netty.handler.codec.http.multipart.{Attribute, FileUpload, InterfaceHttpData}
+import io.netty.util.{AttributeKey, CharsetUtil}
+import org.pytorch.serve.http.{ErrorResponse, Session, StatusResponse}
+import org.pytorch.serve.metrics.{IMetric, MetricCache}
+import org.pytorch.serve.util.ConfigManager
+import org.pytorch.serve.util.messages.InputParameter
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.IOException
 import java.net.SocketAddress
 import java.util
-import org.pytorch.serve.http.ErrorResponse
-import org.pytorch.serve.http.Session
-import org.pytorch.serve.http.StatusResponse
-import org.pytorch.serve.metrics.IMetric
-import org.pytorch.serve.metrics.MetricCache
-import org.pytorch.serve.util.messages.InputParameter
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import  org.pytorch.serve.util.ConfigManager
-
 import scala.jdk.CollectionConverters.*
 
 /** A utility class that handling Netty request and response. */
@@ -123,7 +100,7 @@ object NettyUtils {
     val requestsMetricDimensionValues = util.Arrays.asList("Host", ConfigManager.getInstance.getHostName)
     if (code >= 200 && code < 300) {
       val requests2xxMetric = MetricCache.getInstance.getMetricFrontend("Requests2XX")
-      if (requests2xxMetric != null) try requests2xxMetric.addOrUpdate(requestsMetricDimensionValues, 1)
+      if (requests2xxMetric != null) try requests2xxMetric.addOrUpdate(requestsMetricDimensionValues.asScala.toList, 1)
       catch {
         case e: Exception =>
           logger.error("Failed to update frontend metric Requests2XX: ", e)
@@ -131,7 +108,7 @@ object NettyUtils {
     }
     else if (code >= 400 && code < 500) {
       val requests4xxMetric = MetricCache.getInstance.getMetricFrontend("Requests4XX")
-      if (requests4xxMetric != null) try requests4xxMetric.addOrUpdate(requestsMetricDimensionValues, 1)
+      if (requests4xxMetric != null) try requests4xxMetric.addOrUpdate(requestsMetricDimensionValues.asScala.toList, 1)
       catch {
         case e: Exception =>
           logger.error("Failed to update frontend metric Requests4XX: ", e)
@@ -139,7 +116,7 @@ object NettyUtils {
     }
     else {
       val requests5xxMetric = MetricCache.getInstance.getMetricFrontend("Requests5XX")
-      if (requests5xxMetric != null) try requests5xxMetric.addOrUpdate(requestsMetricDimensionValues, 1)
+      if (requests5xxMetric != null) try requests5xxMetric.addOrUpdate(requestsMetricDimensionValues.asScala.toList, 1)
       catch {
         case e: Exception =>
           logger.error("Failed to update frontend metric Requests5XX: ", e)
