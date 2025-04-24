@@ -49,8 +49,8 @@ object ModelConfig {
             if (v.isInstanceOf[List[?]]) modelConfig.setDeviceIds(v.asInstanceOf[List[?]])
             else logger.warn("Invalid deviceIds: {}, should be list of integer", v)
           case "torchrun" =>
-            if (v.isInstanceOf[Map[_, _]]) {
-              modelConfig.torchRun = TorchRun.build(v.asInstanceOf[Map[_, _]])
+            if (v.isInstanceOf[Map[?, ?]]) {
+              modelConfig.torchRun = TorchRun.build(v.asInstanceOf[Map[?, ?]])
               modelConfig.setParallelLevel(modelConfig.torchRun.getNprocPerNode)
             }
             else logger.warn("Invalid torchrun: {}, should be Torchrun parameters", v)

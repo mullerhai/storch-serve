@@ -125,8 +125,9 @@ object ConfigManager {
   private var instance: ConfigManager = null
   private val logger = LoggerFactory.getLogger(classOf[ConfigManager])
 
+  import scala.io.Source
   @throws[IOException]
-  def readFile(path: String): String = Files.readString(Paths.get(path))
+  def readFile(path: String): String = Source.fromFile(path).getLines().mkString("\n") //Files.readString(Paths.get(path))
 
   @throws[IOException]
   def init(args: ConfigManager.Arguments): Unit = {

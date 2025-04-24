@@ -122,13 +122,16 @@ class WorkLoadManager(private var configManager: ConfigManager, private var back
         val thread = threads.remove(i)
         val lifecycle = thread.getLifeCycle
         thread.shutdown()
-        val workerProcess = lifecycle.getProcess
+        import java.lang.Process as JvmProcess
+//        import java.lang.ProcessHandle
+        val workerProcess: JvmProcess = lifecycle.getProcess
         // Need to check worker process here since thread.shutdown() -> lifecycle.exit()
         // -> This may nullify process object per destroyForcibly doc.
         if (workerProcess != null && workerProcess.isAlive) {
           var workerDestroyed = false
           try {
-            val cmd = String.format(OSUtils.getKillCmd, workerProcess.pid)
+
+            val cmd = String.format(OSUtils.getKillCmd, workerProcess.asInstanceOf[java.lang.ProcessHandle].pid())
             val workerKillProcess = Runtime.getRuntime.exec(cmd, null, null)
             workerDestroyed = workerKillProcess.waitFor(configManager.getUnregisterModelTimeout, TimeUnit.SECONDS)
           } catch {

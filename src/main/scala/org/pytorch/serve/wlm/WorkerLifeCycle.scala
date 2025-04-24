@@ -114,7 +114,7 @@ object WorkerLifeCycle {
 class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
   private val modelManager = ModelManager.getInstance
   private var pid = -1
-  private var process: Process = null
+  private var process: java.lang.Process = null
   private var latch: CountDownLatch = null
   private var success = false
   private var connector: Connector = null
@@ -124,7 +124,7 @@ class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
   private var currNumRunningWorkers = modelManager.getNumRunningWorkers(model.getModelVersionName)
 
   def getProcess: Process = process
-
+//  def getPid = process.pid() //.toHandle.pid()
   @throws[WorkerInitializationException]
   @throws[InterruptedException]
   def startWorker(port: Int, deviceIds: String): Unit = {
