@@ -19,8 +19,9 @@ import org.pytorch.serve.util.messages.EnvironmentUtils
 import org.pytorch.serve.util.{ConfigManager, Connector}
 import org.pytorch.serve.wlm.Model
 import org.slf4j.{Logger, LoggerFactory}
-
+//import scala.sys.process.{Process,ProcessBuilder,ProcessImplicits}
 import scala.jdk.CollectionConverters.*
+//import scala.sys.process.processInternal.JProcess
 import scala.util.control.Breaks.{break, breakable}
 
 object WorkerLifeCycle {
@@ -114,7 +115,8 @@ object WorkerLifeCycle {
 class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
   private val modelManager = ModelManager.getInstance
   private var pid = -1
-  private var process: java.lang.Process = null
+  private var process: Process = null
+  private var processHandle: java.lang.ProcessHandle = null
   private var latch: CountDownLatch = null
   private var success = false
   private var connector: Connector = null
@@ -124,6 +126,7 @@ class WorkerLifeCycle( var configManager: ConfigManager,  var model: Model) {
   private var currNumRunningWorkers = modelManager.getNumRunningWorkers(model.getModelVersionName)
 
   def getProcess: Process = process
+  def getProcessHandle: java.lang.ProcessHandle = processHandle
 //  def getPid = process.pid() //.toHandle.pid()
   @throws[WorkerInitializationException]
   @throws[InterruptedException]
